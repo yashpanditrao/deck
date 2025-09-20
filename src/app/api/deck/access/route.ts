@@ -54,7 +54,6 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         deck_url: shareLink.deck_url,
-        deck_id: shareLink.deck_id
       }
     })
 

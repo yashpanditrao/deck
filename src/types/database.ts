@@ -1,8 +1,7 @@
 export interface DeckShareLink {
   id: string;
-  deck_id: string;
   deck_url: string;
-  user_id: string;
+  comapany_id: string;
   recipient_email: string;
   token: string;
   verification_code: string | null;

@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        deck_id: shareLink.deck_id,
+        deck_url: shareLink.deck_url,
         recipient_email: shareLink.recipient_email,
         is_verified: shareLink.is_verified,
         expires_at: shareLink.expires_at
