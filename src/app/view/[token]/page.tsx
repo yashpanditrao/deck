@@ -3,11 +3,24 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import EmailVerification from '@/components/EmailVerification'
-import PdfViewer from '@/components/PdfViewer'
+import dynamic from 'next/dynamic'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
+// Dynamically import PdfViewer to avoid SSR issues
+const PdfViewer = dynamic(() => import('@/components/PdfViewer'), {
+  ssr: false,
+  loading: () => (
+    <div className="fixed inset-0 bg-black flex items-center justify-center">
+      <div className="flex flex-col items-center space-y-4 text-white">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <span className="text-gray-300">Loading document viewer...</span>
+      </div>
+    </div>
+  )
+})
+
 interface ShareLinkData {
-  deck_id: string
+  deck_url: string
   recipient_email: string
   is_verified: boolean
   expires_at: string | null
@@ -15,7 +28,6 @@ interface ShareLinkData {
 
 interface DeckData {
   deck_url: string
-  deck_id: string
 }
 
 export default function ViewDeckPage() {
@@ -177,25 +189,9 @@ export default function ViewDeckPage() {
 
   if (step === 'viewing' && deckData) {
     return (
-      <div className="min-h-screen bg-gray-50 p-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="mb-6 text-center">
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Shared Deck
-            </h1>
-            <p className="text-gray-600">
-              This deck was shared with {shareData?.recipient_email}
-            </p>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow-lg p-4">
-            <PdfViewer 
-              url={deckData.deck_url} 
-              className="w-full"
-            />
-          </div>
-        </div>
-      </div>
+      <PdfViewer 
+        pdfLink={deckData.deck_url}
+      />
     )
   }
 

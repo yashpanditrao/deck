@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { DeckShareLink } from '@/types/database'
+import { generateSignedUrl } from '@/lib/supabase-storage'
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
     // Only select necessary fields and ensure is_verified is true
     const { data: shareLink, error } = await supabase
       .from('deck_share_links')
-      .select('deck_url, deck_id, expires_at, is_verified, created_at')
+      .select('deck_url, expires_at, is_verified, created_at')
       .eq('token', token)
       .eq('is_verified', true) // Only get verified shares
       .single<DeckShareLink>()
@@ -48,14 +49,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Note: No need to check is_verified here since we already filtered for it in the query
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        deck_url: shareLink.deck_url,
-      }
-    })
+    // Generate signed URL for the deck file
+    try {
+      const signedUrl = await generateSignedUrl(shareLink.deck_url, 3600) // 1 hour expiration
+      
+      return NextResponse.json({
+        success: true,
+        data: {
+          deck_url: signedUrl,
+        }
+      })
+    } catch (signedUrlError) {
+      console.error('Error generating signed URL:', signedUrlError)
+      return NextResponse.json(
+        { error: 'Failed to access deck file' },
+        { status: 500 }
+      )
+    }
 
   } catch (err) {
     console.error('Deck access error:', err)
