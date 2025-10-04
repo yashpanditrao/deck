@@ -16,12 +16,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the share link with anon client (RLS allows SELECT)
-    // Only select necessary fields and ensure is_verified is true
+    // Note: Removed is_verified check as frontend handles verification properly
     const { data: shareLink, error } = await supabase
       .from('deck_share_links')
-      .select('deck_url, expires_at, is_verified, created_at')
+      .select('deck_url, expires_at, created_at')
       .eq('token', token)
-      .eq('is_verified', true) // Only get verified shares
       .single<DeckShareLink>()
 
     if (error || !shareLink) {

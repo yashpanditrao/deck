@@ -42,14 +42,13 @@ export default function EmailVerification({ token, recipientEmail, onVerified }:
     }
   }
 
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle>Verify Your Email</CardTitle>
           <CardDescription>
-            This deck was shared with <strong>{recipientEmail}</strong>. 
+            This deck was shared with a specific email address.
             Please verify your identity to access the content.
           </CardDescription>
         </CardHeader>

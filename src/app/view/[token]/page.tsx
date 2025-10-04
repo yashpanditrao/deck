@@ -40,7 +40,7 @@ export default function ViewDeckPage() {
   const [error, setError] = useState('')
   const [step, setStep] = useState<'validating' | 'verification' | 'viewing'>('validating')
 
-  // Check if user is already verified (session storage) - now email-based
+  // Check if user is already verified (session storage only) - email-based verification
   const getVerificationStatus = (email?: string) => {
     if (typeof window !== 'undefined' && email) {
       const verifiedData = sessionStorage.getItem(`verified_email_${email.toLowerCase()}`)
@@ -108,14 +108,14 @@ export default function ViewDeckPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })
       })
-
       const result = await response.json()
 
       if (response.ok) {
         setShareData(result.data)
         
-        // Check if already verified in database or session (now email-based)
-        if (result.data.is_verified || getVerificationStatus(result.data.recipient_email)) {
+        // Check if already verified in session storage only (not database)
+        // Database is_verified should not bypass email verification for security
+        if (getVerificationStatus(result.data.recipient_email)) {
           setStep('viewing')
           await loadDeck()
         } else {
