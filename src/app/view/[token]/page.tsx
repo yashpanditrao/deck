@@ -21,13 +21,10 @@ const PdfViewer = dynamic(() => import('@/components/PdfViewer'), {
 
 interface ShareLinkData {
   deck_url: string
+  thumbnail_path: string
   recipient_email: string
   is_verified: boolean
   expires_at: string | null
-}
-
-interface DeckData {
-  deck_url: string
 }
 
 export default function ViewDeckPage() {
@@ -35,7 +32,6 @@ export default function ViewDeckPage() {
   const token = params.token as string
 
   const [shareData, setShareData] = useState<ShareLinkData | null>(null)
-  const [deckData, setDeckData] = useState<DeckData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [step, setStep] = useState<'validating' | 'verification' | 'viewing'>('validating')
@@ -79,45 +75,24 @@ export default function ViewDeckPage() {
     }
   }
 
-  // Load deck data after verification
-  const loadDeck = useCallback(async () => {
+  // Single optimized function that validates and loads deck data
+  const loadDeckData = useCallback(async () => {
     try {
-      const response = await fetch('/api/deck/access', {
+      const response = await fetch('/api/deck/view', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token })
       })
 
-      const result = await response.json()
-
-      if (response.ok) {
-        setDeckData(result.data)
-      } else {
-        setError(result.error)
-      }
-    } catch {
-      setError('Failed to load deck. Please try again.')
-    }
-  }, [token])
-
-  // Validate token and get share link data
-  const validateToken = useCallback(async () => {
-    try {
-      const response = await fetch('/api/deck/validate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token })
-      })
       const result = await response.json()
 
       if (response.ok) {
         setShareData(result.data)
-        
+
         // Check if already verified in session storage only (not database)
         // Database is_verified should not bypass email verification for security
         if (getVerificationStatus(result.data.recipient_email)) {
           setStep('viewing')
-          await loadDeck()
         } else {
           setStep('verification')
         }
@@ -129,7 +104,7 @@ export default function ViewDeckPage() {
     } finally {
       setLoading(false)
     }
-  }, [token, loadDeck])
+  }, [token])
 
   // Handle successful verification
   const handleVerified = () => {
@@ -137,14 +112,13 @@ export default function ViewDeckPage() {
       setVerificationStatus(true, shareData.recipient_email)
     }
     setStep('viewing')
-    loadDeck()
   }
 
   useEffect(() => {
     if (token) {
-      validateToken()
+      loadDeckData()
     }
-  }, [token, validateToken])
+  }, [token, loadDeckData])
 
   if (loading) {
     return (
@@ -187,10 +161,10 @@ export default function ViewDeckPage() {
     )
   }
 
-  if (step === 'viewing' && deckData) {
+  if (step === 'viewing' && shareData) {
     return (
-      <PdfViewer 
-        pdfLink={deckData.deck_url}
+      <PdfViewer
+        pdfLink={shareData.deck_url}
       />
     )
   }
