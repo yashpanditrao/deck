@@ -72,18 +72,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Additional security: Check if token is too old (30 days)
-    if (result.created_at) {
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-      if (new Date(result.created_at) < thirtyDaysAgo) {
-        return NextResponse.json(
-          { error: 'Share link is too old' },
-          { status: 410 }
-        )
-      }
-    }
-
     // Generate signed URL for the deck file (1 hour expiration)
     try {
       const signedUrl = await generateSignedUrl(result.deck_files.file_path, 3600)
