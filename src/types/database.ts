@@ -11,6 +11,7 @@ export interface DeckShareLink {
   expires_at: string | null;
   created_at: string;
   updated_at: string;
+  is_downloadable: boolean;
 }
 
 export interface DeckFile {

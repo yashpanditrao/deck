@@ -25,6 +25,7 @@ interface ShareLinkData {
   recipient_email: string
   is_verified: boolean
   expires_at: string | null
+  is_downloadable: boolean
 }
 
 export default function ViewDeckPage() {
@@ -162,9 +163,11 @@ export default function ViewDeckPage() {
   }
 
   if (step === 'viewing' && shareData) {
+    console.log('ShareData:', shareData);
     return (
       <PdfViewer
         pdfLink={shareData.deck_url}
+        isDownloadable={shareData.is_downloadable}
       />
     )
   }

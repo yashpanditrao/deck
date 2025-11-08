@@ -10,6 +10,7 @@ interface ShareLinkWithDeckFile {
   verification_code: string | null
   verification_code_expires: string | null
   is_verified: boolean
+  is_downloadable: boolean
   expires_at: string | null
   created_at: string
   updated_at: string
@@ -44,6 +45,7 @@ export async function POST(request: NextRequest) {
         verification_code,
         verification_code_expires,
         is_verified,
+        is_downloadable,
         expires_at,
         created_at,
         updated_at,
@@ -56,6 +58,8 @@ export async function POST(request: NextRequest) {
       `)
       .eq('token', token)
       .single<ShareLinkWithDeckFile>()
+    
+    console.log('Database query result:', { result, error });
 
     if (error || !result) {
       return NextResponse.json(
@@ -63,6 +67,8 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       )
     }
+
+    console.log('Database result - is_downloadable:', result.is_downloadable);
 
     // Check if token is expired
     if (result.expires_at && new Date(result.expires_at) < new Date()) {
@@ -76,16 +82,20 @@ export async function POST(request: NextRequest) {
     try {
       const signedUrl = await generateSignedUrl(result.deck_files.file_path, 3600)
 
-      return NextResponse.json({
+      const responseData = {
         success: true,
         data: {
           deck_url: signedUrl,
           thumbnail_path: result.deck_files.thumbnail_path,
           recipient_email: result.recipient_email,
           is_verified: result.is_verified,
-          expires_at: result.expires_at
+          expires_at: result.expires_at,
+          is_downloadable: result.is_downloadable || false
         }
-      })
+      };
+    
+    console.log('API Response:', JSON.stringify(responseData, null, 2));
+    return NextResponse.json(responseData)
     } catch (signedUrlError) {
       console.error('Error generating signed URL:', signedUrlError)
       return NextResponse.json(

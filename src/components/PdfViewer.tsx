@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   ChevronLeft,
   ChevronRight,
+  Download,
   Loader2,
   ZoomIn,
   ZoomOut,
@@ -21,6 +22,7 @@ if (typeof window !== 'undefined') {
 
 interface PDFViewerProps {
   pdfLink: string;
+  isDownloadable: boolean;
 }
 
 interface ViewerState {
@@ -35,7 +37,8 @@ const MAX_SCALE_DESKTOP = 3;
 const SCALE_STEP = 0.2;
 const MOBILE_BREAKPOINT = 768;
 
-const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink }) => {
+const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
+  console.log('PdfViewer - isDownloadable:', isDownloadable);
   const [viewerState, setViewerState] = useState<ViewerState>({
     numPages: 0,
     pageNumber: 1,
@@ -237,7 +240,26 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink }) => {
               <h1 className="font-semibold text-lg">Shared Pitch Deck</h1>
             </div>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-4">
+            {isDownloadable && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = pdfLink;
+                  link.download = `deck-${new Date().toISOString().split('T')[0]}.pdf`;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md flex items-center space-x-2 shadow-lg transition-colors duration-200"
+                title="Download PDF"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download PDF</span>
+              </Button>
+            )}
             <span className="text-sm text-gray-400">
               Page {viewerState.pageNumber} of {viewerState.numPages}
             </span>
@@ -347,9 +369,11 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink }) => {
       </div>
 
       {/* Security Watermark */}
-      <div className="absolute bottom-4 left-4 text-xs text-gray-500 opacity-50 pointer-events-none select-none">
-        🔒 Protected Document - Download Disabled
-      </div>
+      {!isDownloadable && (
+        <div className="absolute bottom-4 left-4 text-xs text-gray-500 opacity-50 pointer-events-none select-none">
+          🔒 Protected Document - Download Disabled
+        </div>
+      )}
     </div>
   );
 });
