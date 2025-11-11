@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
-import { generateSignedUrl } from '@/lib/supabase-storage'
 
 interface ShareLinkWithDeckFile {
   id: string

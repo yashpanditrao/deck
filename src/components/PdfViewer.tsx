@@ -2,7 +2,7 @@
 
 import React, { useCallback, useState, useEffect, useMemo } from "react";
 import { useResizeObserver } from "@wojtekmaj/react-hooks";
-import { pdfjs, Document, Page, type DocumentProps } from "react-pdf";
+import { pdfjs, Document, Page } from "react-pdf";
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { Button } from "@/components/ui/button";
@@ -49,18 +49,15 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
   });
   const [containerRef, setContainerRef] = useState<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>();
-  const [containerHeight, setContainerHeight] = useState<number>();
+  const [, setContainerHeight] = useState<number>();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
 
-  // Memoize the maximum scale based on device type
-  const maxScale = useMemo(
-    () => (isMobile ? MAX_SCALE_MOBILE : MAX_SCALE_DESKTOP),
-    [isMobile]
-  );
+  // Calculate max scale based on device type
+  const maxScale = isMobile ? MAX_SCALE_MOBILE : MAX_SCALE_DESKTOP;
 
   // Navigation handlers
   const previousPage = useCallback(() => {
@@ -92,12 +89,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
     }));
   }, []);
 
-  const resetZoom = useCallback(() => {
-    setViewerState(prev => ({
-      ...prev,
-      scale: 1,
-    }));
-  }, []);
+  // Reset zoom functionality removed as it's not used
 
   // Handle device type detection
   useEffect(() => {
@@ -204,17 +196,8 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
     };
   }, [previousPage, nextPage]);
 
-  if (!pdfLink) {
-    return (
-      <div className="fixed inset-0 bg-gray-900 flex items-center justify-center">
-        <div className="text-center text-white">
-          <div className="w-16 h-16 mx-auto mb-4 opacity-50">📄</div>
-          <p className="text-xl">No document available</p>
-        </div>
-      </div>
-    );
-  }
 
+  // Move useMemo hooks to the top level
   const pdfUrl = useMemo(() => {
     // Create a secure URL with the token and email
     const url = new URL(`/api/deck/serve/${token}`, window.location.origin);
@@ -228,6 +211,17 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
       'x-verify-email': email
     }
   }), [email]);
+
+  if (!pdfUrl) {
+    return (
+      <div className="fixed inset-0 bg-gray-900 flex items-center justify-center">
+        <div className="text-center text-white">
+          <div className="w-16 h-16 mx-auto mb-4 opacity-50">📄</div>
+          <p className="text-xl">No document available</p>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (

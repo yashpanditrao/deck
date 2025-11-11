@@ -7,12 +7,12 @@ import { Loader2, Mail } from 'lucide-react'
 
 interface EmailVerificationProps {
   token: string
-  recipientEmail: string
+  recipientEmail?: string
   onVerified: (email: string) => void
 }
 
 export default function EmailVerification({ token, recipientEmail, onVerified }: EmailVerificationProps) {
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(recipientEmail || '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [isMounted, setIsMounted] = useState(false)
@@ -106,16 +106,17 @@ export default function EmailVerification({ token, recipientEmail, onVerified }:
                 Email address
               </label>
               <Input
-                id="email"
                 type="email"
+                placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your.email@example.com"
+                disabled={!!recipientEmail}
                 required
-                className="w-full h-11"
-                autoComplete="email"
-                autoFocus
+                className={`w-full p-6 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                  recipientEmail ? 'bg-gray-100' : ''
+                }`}
               />
+             
             </div>
             
             {error && (

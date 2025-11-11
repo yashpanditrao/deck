@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import EmailVerification from '@/components/EmailVerification'
 import dynamic from 'next/dynamic'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -33,7 +33,6 @@ interface VerificationResponse {
 
 const ViewDeckContent = () => {
   const searchParams = useSearchParams()
-  const router = useRouter()
   const token = searchParams.get('token')
 
   const [shareData, setShareData] = useState<ShareLinkData | null>(null)
