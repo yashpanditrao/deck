@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { useParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import EmailVerification from '@/components/EmailVerification'
 import dynamic from 'next/dynamic'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -29,8 +29,9 @@ interface ShareLinkData {
 }
 
 export default function ViewDeckPage() {
-  const params = useParams()
-  const token = params.token as string
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const token = searchParams.get('token')
 
   const [shareData, setShareData] = useState<ShareLinkData | null>(null)
   const [loading, setLoading] = useState(true)
@@ -78,6 +79,12 @@ export default function ViewDeckPage() {
 
   // Single optimized function that validates and loads deck data
   const loadDeckData = useCallback(async () => {
+    if (!token) {
+      setError('Missing token parameter')
+      setLoading(false)
+      return
+    }
+
     try {
       const response = await fetch('/api/deck/view', {
         method: 'POST',
@@ -91,7 +98,6 @@ export default function ViewDeckPage() {
         setShareData(result.data)
 
         // Check if already verified in session storage only (not database)
-        // Database is_verified should not bypass email verification for security
         if (getVerificationStatus(result.data.recipient_email)) {
           setStep('viewing')
         } else {
@@ -100,7 +106,7 @@ export default function ViewDeckPage() {
       } else {
         setError(result.error)
       }
-    } catch {
+    } catch (err) {
       setError('Network error. Please try again.')
     } finally {
       setLoading(false)
@@ -118,6 +124,9 @@ export default function ViewDeckPage() {
   useEffect(() => {
     if (token) {
       loadDeckData()
+    } else {
+      setLoading(false)
+      setError('Token is required')
     }
   }, [token, loadDeckData])
 
@@ -155,7 +164,7 @@ export default function ViewDeckPage() {
   if (step === 'verification' && shareData) {
     return (
       <EmailVerification
-        token={token}
+        token={token!}
         recipientEmail={shareData.recipient_email}
         onVerified={handleVerified}
       />
@@ -163,7 +172,6 @@ export default function ViewDeckPage() {
   }
 
   if (step === 'viewing' && shareData) {
-    console.log('ShareData:', shareData);
     return (
       <PdfViewer
         pdfLink={shareData.deck_url}

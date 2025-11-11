@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState, useEffect, useMemo } from "react";
+import React, { useCallback, useState, useEffect, useMemo, useRef } from "react";
 import { useResizeObserver } from "@wojtekmaj/react-hooks";
 import { pdfjs, Document, Page } from "react-pdf";
 import { Button } from "@/components/ui/button";
@@ -38,7 +38,6 @@ const SCALE_STEP = 0.2;
 const MOBILE_BREAKPOINT = 768;
 
 const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
-  console.log('PdfViewer - isDownloadable:', isDownloadable);
   const [viewerState, setViewerState] = useState<ViewerState>({
     numPages: 0,
     pageNumber: 1,
@@ -50,6 +49,8 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [touchStart, setTouchStart] = useState(0);
+  const [touchEnd, setTouchEnd] = useState(0);
 
   // Memoize the maximum scale based on device type
   const maxScale = useMemo(
@@ -57,65 +58,41 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
     [isMobile]
   );
 
-  // Anti-download and security measures
-  useEffect(() => {
-    const handleContextMenu = (e: MouseEvent) => {
-      e.preventDefault();
-      return false;
-    };
+  // Navigation handlers
+  const previousPage = useCallback(() => {
+    setViewerState(prev => ({
+      ...prev,
+      pageNumber: Math.max(1, prev.pageNumber - 1),
+    }));
+  }, []);
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Disable dangerous shortcuts
-      if (
-        e.key === 'F12' ||
-        (e.ctrlKey && ['s', 'p', 'u', 'a'].includes(e.key.toLowerCase())) ||
-        (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(e.key.toLowerCase())) ||
-        e.key === 'PrintScreen'
-      ) {
-        e.preventDefault();
-        toast.error("This action is not allowed for security reasons");
-        return false;
-      }
+  const nextPage = useCallback(() => {
+    setViewerState(prev => ({
+      ...prev,
+      pageNumber: Math.min(prev.numPages, prev.pageNumber + 1),
+    }));
+  }, []);
 
-      // Navigation keys
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        previousPage();
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        nextPage();
-      }
-    };
+  // Zoom handlers
+  const zoomIn = useCallback(() => {
+    setViewerState(prev => ({
+      ...prev,
+      scale: Math.min(prev.scale + SCALE_STEP, maxScale),
+    }));
+  }, [maxScale]);
 
-    const handleSelectStart = (e: Event) => {
-      e.preventDefault();
-      return false;
-    };
+  const zoomOut = useCallback(() => {
+    setViewerState(prev => ({
+      ...prev,
+      scale: Math.max(prev.scale - SCALE_STEP, MIN_SCALE),
+    }));
+  }, []);
 
-    const handleDragStart = (e: DragEvent) => {
-      e.preventDefault();
-      return false;
-    };
-
-    document.addEventListener('contextmenu', handleContextMenu);
-    document.addEventListener('keydown', handleKeyDown);
-    document.addEventListener('selectstart', handleSelectStart);
-    document.addEventListener('dragstart', handleDragStart);
-
-    // Disable text selection
-    document.body.style.userSelect = 'none';
-    document.body.style.webkitUserSelect = 'none';
-
-    return () => {
-      document.removeEventListener('contextmenu', handleContextMenu);
-      document.removeEventListener('keydown', handleKeyDown);
-      document.removeEventListener('selectstart', handleSelectStart);
-      document.removeEventListener('dragstart', handleDragStart);
-      
-      // Restore text selection
-      document.body.style.userSelect = '';
-      document.body.style.webkitUserSelect = '';
-    };
+  const resetZoom = useCallback(() => {
+    setViewerState(prev => ({
+      ...prev,
+      scale: 1,
+    }));
   }, []);
 
   // Handle device type detection
@@ -123,7 +100,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
     const checkMobile = () => {
       const isMobileDevice = window.innerWidth <= MOBILE_BREAKPOINT;
       setIsMobile(isMobileDevice);
-      setViewerState((prev) => ({ ...prev, scale: 1 }));
+      setViewerState(prev => ({ ...prev, scale: 1 }));
     };
 
     checkMobile();
@@ -145,10 +122,9 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
   // PDF loading handlers
   const onDocumentLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
-      setViewerState((prev) => ({ ...prev, numPages, pageNumber: 1 }));
+      setViewerState(prev => ({ ...prev, numPages, pageNumber: 1 }));
       setIsLoading(false);
       setError(null);
-      toast.success(`Document loaded - ${numPages} pages`);
     },
     []
   );
@@ -158,47 +134,71 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
       console.error("PDF load error:", error);
       setIsLoading(false);
       setError("Failed to load document. Please try again later.");
-      toast.error("Failed to load document. Please try again later.");
     },
     []
   );
 
-  // Navigation handlers
-  const previousPage = useCallback(() => {
-    setViewerState((prev) => ({
-      ...prev,
-      pageNumber: Math.max(1, prev.pageNumber - 1),
-    }));
-  }, []);
+  // Touch event handlers for swipe navigation
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart(e.targetTouches[0].clientX);
+  };
 
-  const nextPage = useCallback(() => {
-    setViewerState((prev) => ({
-      ...prev,
-      pageNumber: Math.min(prev.numPages, prev.pageNumber + 1),
-    }));
-  }, []);
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
 
-  // Zoom handlers
-  const zoomIn = useCallback(() => {
-    setViewerState((prev) => ({
-      ...prev,
-      scale: Math.min(prev.scale + SCALE_STEP, maxScale),
-    }));
-  }, [maxScale]);
+  const handleTouchEnd = () => {
+    if (touchStart - touchEnd > 50) {
+      // Swipe left - next page
+      nextPage();
+    }
 
-  const zoomOut = useCallback(() => {
-    setViewerState((prev) => ({
-      ...prev,
-      scale: Math.max(prev.scale - SCALE_STEP, MIN_SCALE),
-    }));
-  }, []);
+    if (touchStart - touchEnd < -50) {
+      // Swipe right - previous page
+      previousPage();
+    }
+  };
 
-  const resetZoom = useCallback(() => {
-    setViewerState((prev) => ({
-      ...prev,
-      scale: 1,
-    }));
-  }, []);
+  // Security measures
+  useEffect(() => {
+    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (
+        e.key === 'F12' ||
+        (e.ctrlKey && ['s', 'p', 'u', 'a'].includes(e.key.toLowerCase())) ||
+        (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(e.key.toLowerCase())) ||
+        e.key === 'PrintScreen'
+      ) {
+        e.preventDefault();
+        return false;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        previousPage();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        nextPage();
+      }
+    };
+    const handleSelectStart = (e: Event) => e.preventDefault();
+    const handleDragStart = (e: DragEvent) => e.preventDefault();
+
+    document.addEventListener('contextmenu', handleContextMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('selectstart', handleSelectStart);
+    document.addEventListener('dragstart', handleDragStart);
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
+
+    return () => {
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('selectstart', handleSelectStart);
+      document.removeEventListener('dragstart', handleDragStart);
+      document.body.style.userSelect = '';
+      document.body.style.webkitUserSelect = '';
+    };
+  }, [previousPage, nextPage]);
 
   if (!pdfLink) {
     return (
@@ -231,69 +231,61 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
 
   return (
     <div className="fixed inset-0 bg-black text-white select-none overflow-hidden">
-      {/* Header */}
+      {/* Header - Title and Download Button */}
       <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/80 to-transparent p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Shield className="w-5 h-5 text-blue-400" />
-            <div>
-              <h1 className="font-semibold text-lg">Shared Pitch Deck</h1>
-            </div>
+            <h1 className="font-semibold text-lg">Shared Pitch Deck</h1>
           </div>
-          <div className="flex items-center space-x-4">
-            {isDownloadable && (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => {
-                  const link = document.createElement('a');
-                  link.href = pdfLink;
-                  link.download = `deck-${new Date().toISOString().split('T')[0]}.pdf`;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                }}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md flex items-center space-x-2 shadow-lg transition-colors duration-200"
-                title="Download PDF"
-              >
-                <Download className="w-4 h-4" />
-                <span>Download PDF</span>
-              </Button>
-            )}
-            <span className="text-sm text-gray-400">
-              Page {viewerState.pageNumber} of {viewerState.numPages}
-            </span>
-          </div>
+          {isDownloadable && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = pdfLink;
+                link.download = `deck-${new Date().toISOString().split('T')[0]}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md flex items-center space-x-2 shadow-lg transition-colors duration-200"
+              title="Download PDF"
+            >
+              <Download className="w-4 h-4" />
+              {!isMobile && <span>Download PDF</span>}
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Main PDF Container */}
       <div 
-        className="absolute inset-0 flex items-center justify-center"
+        className={`absolute inset-0 ${isMobile ? 'top-16' : 'top-0'} flex items-center justify-center`}
         ref={setContainerRef}
-        style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
-        {isLoading && (
-          <div className="flex flex-col items-center space-y-4">
-            <Loader2 className="h-12 w-12 animate-spin text-blue-400" />
-            <p className="text-gray-300">Loading your document...</p>
-          </div>
-        )}
-        
         <Document
           file={pdfLink}
+          loading={
+            <div className="flex flex-col items-center space-y-4">
+              <Loader2 className="w-8 h-8 animate-spin text-white" />
+              <span className="text-white">Loading document...</span>
+            </div>
+          }
           onLoadSuccess={onDocumentLoadSuccess}
           onLoadError={onDocumentLoadError}
-          loading={null}
-          error={null}
-          className="flex items-center justify-center"
+          className="relative"
         >
           <div className="shadow-2xl">
             <Page
               pageNumber={viewerState.pageNumber}
               scale={viewerState.scale}
               width={containerWidth ? Math.min(containerWidth * 0.9, 1200) : undefined}
-              height={containerHeight ? containerHeight * 0.85 : undefined}
+              height={containerHeight ? containerHeight * 0.8 : undefined}
               renderTextLayer={false}
               renderAnnotationLayer={false}
               className="bg-white"
@@ -302,64 +294,76 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
         </Document>
       </div>
 
-      {/* Side Navigation - Left */}
-      <div className="absolute left-4 top-1/2 transform -translate-y-1/2 z-20">
+      {/* Navigation Buttons */}
+      <div className={`absolute ${isMobile ? 'left-4 right-4 bottom-24' : 'left-4 right-4 top-1/2 -translate-y-1/2'} flex items-center justify-between z-20`}>
         <Button
           variant="ghost"
-          size="icon"
+          size={isMobile ? "icon" : "default"}
           onClick={previousPage}
           disabled={viewerState.pageNumber <= 1 || isLoading}
-          className="text-white hover:bg-white/20 disabled:opacity-30 bg-black/50 backdrop-blur-sm h-12 w-12 rounded-full shadow-lg"
+          className="text-white hover:bg-white/20 disabled:opacity-30 bg-black/50 backdrop-blur-sm rounded-full shadow-lg transition-all duration-200 hover:scale-105"
+          style={isMobile ? { width: '3.5rem', height: '3.5rem' } : { padding: '0.5rem 1rem' }}
           title="Previous page"
         >
-          <ChevronLeft className="w-6 h-6" />
+          {isMobile ? (
+            <ChevronLeft className="w-7 h-7" />
+          ) : (
+            <div className="flex items-center">
+              <ChevronLeft className="w-5 h-5 mr-1" />
+              <span>Previous</span>
+            </div>
+          )}
         </Button>
-      </div>
-
-      {/* Side Navigation - Right */}
-      <div className="absolute right-4 top-1/2 transform -translate-y-1/2 z-20">
+        
         <Button
           variant="ghost"
-          size="icon"
+          size={isMobile ? "icon" : "default"}
           onClick={nextPage}
           disabled={viewerState.pageNumber >= viewerState.numPages || isLoading}
-          className="text-white hover:bg-white/20 disabled:opacity-30 bg-black/50 backdrop-blur-sm h-12 w-12 rounded-full shadow-lg"
+          className="text-white hover:bg-white/20 disabled:opacity-30 bg-black/50 backdrop-blur-sm rounded-full shadow-lg transition-all duration-200 hover:scale-105"
+          style={isMobile ? { width: '3.5rem', height: '3.5rem' } : { padding: '0.5rem 1rem' }}
           title="Next page"
         >
-          <ChevronRight className="w-6 h-6" />
+          {isMobile ? (
+            <ChevronRight className="w-7 h-7" />
+          ) : (
+            <div className="flex items-center">
+              <span>Next</span>
+              <ChevronRight className="w-5 h-5 ml-1" />
+            </div>
+          )}
         </Button>
       </div>
 
-      {/* Bottom Controls - Only Zoom */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/80 to-transparent p-4">
-        <div className="flex items-center justify-center">
+      {/* Bottom Controls - Zoom and Page Count */}
+      <div className={`absolute ${isMobile ? 'bottom-4' : 'bottom-0'} left-0 right-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-4`}>
+        <div className="flex items-center justify-center gap-4">
+          {/* Page Info */}
+          <div className="text-sm text-white/90 bg-black/50 backdrop-blur-sm px-4 py-2 rounded-lg">
+            Page {viewerState.pageNumber} of {viewerState.numPages}
+          </div>
+          
           {/* Zoom Controls */}
-          <div className="flex items-center space-x-2 bg-black/50 rounded-lg px-4 py-2 backdrop-blur-sm shadow-lg">
+          <div className="flex items-center bg-black/50 backdrop-blur-sm rounded-lg shadow-lg">
             <Button
               variant="ghost"
               size="sm"
               onClick={zoomOut}
               disabled={isLoading || viewerState.scale <= MIN_SCALE}
-              className="text-white hover:bg-white/10 disabled:opacity-30 p-2"
+              className="text-white hover:bg-white/20 disabled:opacity-30 p-2"
               title="Zoom out"
             >
               <ZoomOut className="w-4 h-4" />
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={resetZoom}
-              className="text-white hover:bg-white/10 px-4 py-2 text-sm font-medium"
-              title="Reset zoom"
-            >
+            <div className="text-sm text-white/90 px-3 py-2 w-16 text-center">
               {Math.round(viewerState.scale * 100)}%
-            </Button>
+            </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={zoomIn}
               disabled={isLoading || viewerState.scale >= maxScale}
-              className="text-white hover:bg-white/10 disabled:opacity-30 p-2"
+              className="text-white hover:bg-white/20 disabled:opacity-30 p-2"
               title="Zoom in"
             >
               <ZoomIn className="w-4 h-4" />
@@ -370,7 +374,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
 
       {/* Security Watermark */}
       {!isDownloadable && (
-        <div className="absolute bottom-4 left-4 text-xs text-gray-500 opacity-50 pointer-events-none select-none">
+        <div className={`absolute ${isMobile ? 'bottom-24' : 'bottom-4'} left-4 text-xs text-gray-500 opacity-50 pointer-events-none select-none`}>
           🔒 Protected Document - Download Disabled
         </div>
       )}

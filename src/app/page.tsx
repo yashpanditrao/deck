@@ -27,7 +27,7 @@ export default function Home() {
               </div>
               <div>
                 <h3 className="font-semibold text-gray-900">Click Your Share Link</h3>
-                <p className="text-gray-600 text-sm">The link will look like: <code className="bg-gray-100 px-1 rounded">/view/abc123...</code></p>
+                <p className="text-gray-600 text-sm">The link will look like: <code className="bg-gray-100 px-1 rounded">/view?token=abc123...</code></p>
               </div>
             </div>
             
