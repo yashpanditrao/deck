@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useState, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useState, useEffect, useMemo } from "react";
 import { useResizeObserver } from "@wojtekmaj/react-hooks";
 import { pdfjs, Document, Page } from "react-pdf";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,6 @@ import {
   ZoomOut,
   Shield,
 } from "lucide-react";
-import { toast } from "sonner";
 
 // Configure PDF.js worker - use local file
 if (typeof window !== 'undefined') {

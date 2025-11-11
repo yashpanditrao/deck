@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import EmailVerification from '@/components/EmailVerification'
 import dynamic from 'next/dynamic'
@@ -28,7 +28,7 @@ interface ShareLinkData {
   is_downloadable: boolean
 }
 
-export default function ViewDeckPage() {
+const ViewDeckContent = () => {
   const searchParams = useSearchParams()
   const router = useRouter()
   const token = searchParams.get('token')
@@ -180,13 +180,65 @@ export default function ViewDeckPage() {
     )
   }
 
+  // Render loading state
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-white">Loading document...</div>
+      </div>
+    )
+  }
+
+  // Render error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-red-500">{error}</div>
+      </div>
+    )
+  }
+
+  // Render verification step
+  if (step === 'verification' && shareData) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <EmailVerification
+          token={token || ''}
+          recipientEmail={shareData.recipient_email}
+          onVerified={() => setStep('viewing')}
+        />
+      </div>
+    )
+  }
+
+  // Render PDF viewer
+  if (step === 'viewing' && shareData) {
+    return (
+      <PdfViewer
+        pdfLink={shareData.deck_url}
+        isDownloadable={shareData.is_downloadable}
+      />
+    )
+  }
+
+  // Default fallback
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md">
-        <CardContent className="flex items-center justify-center p-8">
-          <span>Loading...</span>
-        </CardContent>
-      </Card>
+    <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="text-white">Loading...</div>
     </div>
   )
 }
+
+const ViewDeckPage = () => {
+  return (
+    <Suspense fallback={
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <div className="text-white">Loading...</div>
+      </div>
+    }>
+      <ViewDeckContent />
+    </Suspense>
+  )
+}
+
+export default ViewDeckPage
