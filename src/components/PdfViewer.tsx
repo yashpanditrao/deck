@@ -2,7 +2,9 @@
 
 import React, { useCallback, useState, useEffect, useMemo } from "react";
 import { useResizeObserver } from "@wojtekmaj/react-hooks";
-import { pdfjs, Document, Page } from "react-pdf";
+import { pdfjs, Document, Page, type DocumentProps } from "react-pdf";
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
 import { Button } from "@/components/ui/button";
 import {
   ChevronLeft,
@@ -12,6 +14,7 @@ import {
   ZoomIn,
   ZoomOut,
   Shield,
+  RotateCw as RefreshCw
 } from "lucide-react";
 
 // Configure PDF.js worker - use local file
@@ -22,6 +25,8 @@ if (typeof window !== 'undefined') {
 interface PDFViewerProps {
   pdfLink: string;
   isDownloadable: boolean;
+  token: string;
+  email: string;
 }
 
 interface ViewerState {
@@ -36,7 +41,7 @@ const MAX_SCALE_DESKTOP = 3;
 const SCALE_STEP = 0.2;
 const MOBILE_BREAKPOINT = 768;
 
-const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
+const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, email }) => {
   const [viewerState, setViewerState] = useState<ViewerState>({
     numPages: 0,
     pageNumber: 1,
@@ -210,6 +215,20 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
     );
   }
 
+  const pdfUrl = useMemo(() => {
+    // Create a secure URL with the token and email
+    const url = new URL(`/api/deck/serve/${token}`, window.location.origin);
+    url.searchParams.append('email', email);
+    return url.toString();
+  }, [token, email]);
+
+  // Add custom headers for the PDF request
+  const options = useMemo(() => ({
+    httpHeaders: {
+      'x-verify-email': email
+    }
+  }), [email]);
+
   if (error) {
     return (
       <div className="fixed inset-0 bg-gray-900 flex items-center justify-center">
@@ -268,28 +287,39 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable }) => {
         onTouchEnd={handleTouchEnd}
       >
         <Document
-          file={pdfLink}
-          loading={
-            <div className="flex flex-col items-center space-y-4">
-              <Loader2 className="w-8 h-8 animate-spin text-white" />
-              <span className="text-white">Loading document...</span>
-            </div>
-          }
+          file={`/api/deck/serve/${token}?email=${encodeURIComponent(email)}`}
           onLoadSuccess={onDocumentLoadSuccess}
           onLoadError={onDocumentLoadError}
-          className="relative"
+          loading={
+            <div className="flex items-center justify-center h-full">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            </div>
+          }
+          error={
+            <div className="flex flex-col items-center justify-center h-full text-red-500 p-4 text-center">
+              <p className="mb-4">Failed to load document. Please try again.</p>
+              <Button 
+                onClick={() => window.location.reload()}
+                className="mt-2"
+                variant="outline"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Reload Document
+              </Button>
+            </div>
+          }
         >
-          <div className="shadow-2xl">
-            <Page
-              pageNumber={viewerState.pageNumber}
-              scale={viewerState.scale}
-              width={containerWidth ? Math.min(containerWidth * 0.9, 1200) : undefined}
-              height={containerHeight ? containerHeight * 0.8 : undefined}
-              renderTextLayer={false}
-              renderAnnotationLayer={false}
-              className="bg-white"
-            />
-          </div>
+          <Page 
+            pageNumber={viewerState.pageNumber} 
+            width={containerWidth ? Math.min(containerWidth * 0.9, 1200) : 800}
+            renderTextLayer={false}
+            renderAnnotationLayer={false}
+            loading={
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+              </div>
+            }
+          />
         </Document>
       </div>
 

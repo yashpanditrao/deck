@@ -39,36 +39,21 @@ export async function POST(request: NextRequest) {
       .from('deck_share_links')
       .select(`
         id,
-        company_id,
-        recipient_email,
-        token,
-        verification_code,
-        verification_code_expires,
-        is_verified,
         is_downloadable,
         expires_at,
-        created_at,
-        updated_at,
-        deck_id,
         deck_files!inner (
-          id,
-          file_path,
-          thumbnail_path
+          file_path
         )
       `)
       .eq('token', token)
       .single<ShareLinkWithDeckFile>()
     
-    console.log('Database query result:', { result, error });
-
     if (error || !result) {
       return NextResponse.json(
         { error: 'Invalid or expired token' },
         { status: 404 }
       )
     }
-
-    console.log('Database result - is_downloadable:', result.is_downloadable);
 
     // Check if token is expired
     if (result.expires_at && new Date(result.expires_at) < new Date()) {
@@ -78,31 +63,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate signed URL for the deck file (1 hour expiration)
-    try {
-      const signedUrl = await generateSignedUrl(result.deck_files.file_path, 3600)
-
-      const responseData = {
-        success: true,
-        data: {
-          deck_url: signedUrl,
-          thumbnail_path: result.deck_files.thumbnail_path,
-          recipient_email: result.recipient_email,
-          is_verified: result.is_verified,
-          expires_at: result.expires_at,
-          is_downloadable: result.is_downloadable || false
-        }
-      };
-    
-    console.log('API Response:', JSON.stringify(responseData, null, 2));
-    return NextResponse.json(responseData)
-    } catch (signedUrlError) {
-      console.error('Error generating signed URL:', signedUrlError)
-      return NextResponse.json(
-        { error: 'Failed to access deck file' },
-        { status: 500 }
-      )
-    }
+    // Only return minimal required data
+    return NextResponse.json({
+      success: true,
+      is_downloadable: result.is_downloadable || false
+    });
 
   } catch (err) {
     console.error('Deck view error:', err)

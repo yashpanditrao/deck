@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useState, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import EmailVerification from '@/components/EmailVerification'
 import dynamic from 'next/dynamic'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 
 // Dynamically import PdfViewer to avoid SSR issues
 const PdfViewer = dynamic(() => import('@/components/PdfViewer'), {
@@ -21,11 +22,13 @@ const PdfViewer = dynamic(() => import('@/components/PdfViewer'), {
 
 interface ShareLinkData {
   deck_url: string
-  thumbnail_path: string
-  recipient_email: string
-  is_verified: boolean
-  expires_at: string | null
   is_downloadable: boolean
+}
+
+interface VerificationResponse {
+  success: boolean
+  deckId?: string
+  recipientEmail: string
 }
 
 const ViewDeckContent = () => {
@@ -34,23 +37,24 @@ const ViewDeckContent = () => {
   const token = searchParams.get('token')
 
   const [shareData, setShareData] = useState<ShareLinkData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [step, setStep] = useState<'validating' | 'verification' | 'viewing'>('validating')
+  const [step, setStep] = useState<'verification' | 'viewing'>('verification')
+  const [recipientEmail, setRecipientEmail] = useState('')
 
   // Check if user is already verified (session storage only) - email-based verification
-  const getVerificationStatus = (email?: string) => {
-    if (typeof window !== 'undefined' && email) {
+  const getVerificationStatus = (email: string) => {
+    if (typeof window !== 'undefined') {
       const verifiedData = sessionStorage.getItem(`verified_email_${email.toLowerCase()}`)
       if (verifiedData) {
         try {
-          const { timestamp } = JSON.parse(verifiedData)
-          // Check if verification is less than 24 hours old
+          const { timestamp, token: storedToken } = JSON.parse(verifiedData)
+          // Check if verification is less than 24 hours old and token matches
           const twentyFourHours = 24 * 60 * 60 * 1000
-          if (Date.now() - timestamp < twentyFourHours) {
+          if (Date.now() - timestamp < twentyFourHours && storedToken === token) {
             return true
           } else {
-            // Remove expired verification
+            // Remove expired or mismatched verification
             sessionStorage.removeItem(`verified_email_${email.toLowerCase()}`)
           }
         } catch {
@@ -62,83 +66,127 @@ const ViewDeckContent = () => {
     return false
   }
 
-  // Set verification status in session storage - now email-based
-  const setVerificationStatus = (verified: boolean, email?: string) => {
-    if (typeof window !== 'undefined' && email) {
-      if (verified) {
-        const verificationData = {
-          timestamp: Date.now(),
-          email: email.toLowerCase()
-        }
-        sessionStorage.setItem(`verified_email_${email.toLowerCase()}`, JSON.stringify(verificationData))
-      } else {
-        sessionStorage.removeItem(`verified_email_${email.toLowerCase()}`)
-      }
-    }
-  }
-
-  // Single optimized function that validates and loads deck data
-  const loadDeckData = useCallback(async () => {
+  // Fetch deck data after successful email verification
+  const fetchDeckData = useCallback(async (email: string) => {
     if (!token) {
-      setError('Missing token parameter')
+      setError('No token provided')
       setLoading(false)
       return
     }
 
+    setLoading(true)
+    setError('')
+
     try {
+      // First verify email matches the token
+      const verifyResponse = await fetch('/api/verify/email-match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, email })
+      })
+
+      const verifyData = await verifyResponse.json()
+
+      if (!verifyResponse.ok) {
+        throw new Error(verifyData.error || 'Email verification failed')
+      }
+
+      // Only after successful verification, fetch deck data
       const response = await fetch('/api/deck/view', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token })
+        body: JSON.stringify({ token, email })
       })
 
       const result = await response.json()
 
-      if (response.ok) {
-        setShareData(result.data)
-
-        // Check if already verified in session storage only (not database)
-        if (getVerificationStatus(result.data.recipient_email)) {
-          setStep('viewing')
-        } else {
-          setStep('verification')
-        }
+      if (response.ok && result.data) {
+        setShareData({
+          deck_url: result.data.deck_url,
+          is_downloadable: result.data.is_downloadable
+        })
+        // Store verification in session storage
+        sessionStorage.setItem(
+          `verified_email_${email.toLowerCase()}`,
+          JSON.stringify({
+            timestamp: Date.now(),
+            token: token
+          })
+        )
+        setStep('viewing')
       } else {
-        setError(result.error)
+        throw new Error(result.error || 'Failed to load deck data')
       }
     } catch (err) {
-      setError('Network error. Please try again.')
+      setError(err instanceof Error ? err.message : 'An error occurred')
+      setStep('verification')
     } finally {
       setLoading(false)
     }
   }, [token])
 
-  // Handle successful verification
-  const handleVerified = () => {
-    if (shareData?.recipient_email) {
-      setVerificationStatus(true, shareData.recipient_email)
-    }
-    setStep('viewing')
-  }
+  const handleEmailVerified = useCallback(async (email: string) => {
+    console.log('Email verified, setting recipient email:', email);
+    setRecipientEmail(email);
+    setLoading(true);
+    try {
+      console.log('Fetching deck data...');
+      const response = await fetch('/api/deck/view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, email })
+      });
 
-  useEffect(() => {
-    if (token) {
-      loadDeckData()
-    } else {
-      setLoading(false)
-      setError('Token is required')
+      const result = await response.json();
+      console.log('Deck data response:', result);
+
+      if (response.ok) {
+        // The API returns { success: true, is_downloadable: boolean }
+        // We need to construct the deck_url using the token
+        const deckUrl = `/api/deck/serve/${token}?email=${encodeURIComponent(email)}`;
+        
+        setShareData({
+          deck_url: deckUrl,
+          is_downloadable: result.is_downloadable || false
+        });
+        // Store verification in session storage
+        sessionStorage.setItem(
+          `verified_email_${email.toLowerCase()}`,
+          JSON.stringify({
+            timestamp: Date.now(),
+            token: token
+          })
+        );
+        setStep('viewing');
+      } else {
+        throw new Error(result.error || 'Failed to load deck data');
+      }
+    } catch (err) {
+      console.error('Error in handleEmailVerified:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
     }
-  }, [token, loadDeckData])
+  }, [token]);
+
+  if (step === 'verification') {
+    return (
+      <EmailVerification 
+        key={token || 'no-token'} // Force re-render on token change
+        token={token || ''} 
+        recipientEmail={recipientEmail}
+        onVerified={handleEmailVerified}
+      />
+    )
+  }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <Card className="w-full max-w-md">
-          <CardContent className="flex items-center justify-center p-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-            <span className="ml-2">Validating access...</span>
-          </CardContent>
-        </Card>
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4 text-white">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+          <span className="text-gray-300">Loading document...</span>
+        </div>
       </div>
     )
   }
@@ -147,79 +195,36 @@ const ViewDeckContent = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
         <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <CardTitle className="text-red-600">Access Error</CardTitle>
+          <CardHeader>
+            <CardTitle>Error</CardTitle>
           </CardHeader>
-          <CardContent className="text-center">
-            <p className="text-gray-700 mb-4">{error}</p>
-            <p className="text-sm text-gray-500">
-              Please check your link or contact the person who shared this deck with you.
-            </p>
+          <CardContent>
+            <p className="text-red-500">{error}</p>
+            <Button className="mt-4" onClick={() => window.location.href = `/view?token=${token}`}>
+              Try Again
+            </Button>
           </CardContent>
         </Card>
       </div>
     )
   }
 
-  if (step === 'verification' && shareData) {
-    return (
-      <EmailVerification
-        token={token!}
-        recipientEmail={shareData.recipient_email}
-        onVerified={handleVerified}
-      />
-    )
-  }
+  console.log('Current state:', { step, token, hasShareData: !!shareData, recipientEmail });
 
-  if (step === 'viewing' && shareData) {
+  if (step === 'viewing' && token) {
+    console.log('Rendering PdfViewer with token:', token);
     return (
-      <PdfViewer
-        pdfLink={shareData.deck_url}
-        isDownloadable={shareData.is_downloadable}
-      />
-    )
-  }
-
-  // Render loading state
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-white">Loading document...</div>
-      </div>
-    )
-  }
-
-  // Render error state
-  if (error) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-red-500">{error}</div>
-      </div>
-    )
-  }
-
-  // Render verification step
-  if (step === 'verification' && shareData) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <EmailVerification
-          token={token || ''}
-          recipientEmail={shareData.recipient_email}
-          onVerified={() => setStep('viewing')}
+      <div className="fixed inset-0 bg-black">
+        <PdfViewer
+          pdfLink={shareData?.deck_url || ''}
+          isDownloadable={shareData?.is_downloadable || false}
+          token={token}
+          email={recipientEmail}
         />
       </div>
     )
   }
 
-  // Render PDF viewer
-  if (step === 'viewing' && shareData) {
-    return (
-      <PdfViewer
-        pdfLink={shareData.deck_url}
-        isDownloadable={shareData.is_downloadable}
-      />
-    )
-  }
 
   // Default fallback
   return (
