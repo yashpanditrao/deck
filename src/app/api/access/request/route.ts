@@ -5,9 +5,16 @@ import { generateOTP } from '@/services/otp.service';
 import { Resend } from 'resend';
 import { Database } from '@/types/database';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export const dynamic = 'force-dynamic';
+
+// Initialize Resend client inside the request handler
+function getResendClient() {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY is not set in environment variables');
+  }
+  return new Resend(apiKey);
+}
 
 type DeckShareLink = Database['public']['Tables']['deck_share_links']['Row'] & {
   deck?: {
@@ -121,6 +128,7 @@ if (process.env.NODE_ENV === 'development') {
 }
 
     // In production, send the OTP via email
+    const resend = getResendClient();
     await resend.emails.send({
       from: 'RaiseGate <noreply@raisegate.com>',
       to: email,
