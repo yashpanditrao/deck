@@ -1,6 +1,6 @@
 // src/services/otp.service.ts
 import crypto from 'crypto';
-import redis from '@/lib/redis'; // your serverless-safe redis client (global patched)
+import getRedisClient from '@/lib/redis';
 import { Redis } from 'ioredis';
 
 type OTPResult = { success: true; otp: string } | { success: false; error: string };
@@ -114,44 +114,42 @@ export async function generateOTP(email: string, token: string): Promise<OTPResu
 
   try {
     // try acquire a very short lock (avoid parallelism)
-    const lockAcquired = await redis.set(lockKey, '1', 'EX', GENERATE_LOCK_TTL, 'NX');
+    const redisClient = await getRedisClient();
+    const lockAcquired = await redisClient.set(lockKey, '1', 'EX', GENERATE_LOCK_TTL, 'NX');
     if (!lockAcquired) {
       return { success: false, error: 'Generation in progress. Try again shortly.' };
     }
 
     // check cooldown quickly (non-atomic read is OK because we set cooldown in Lua below)
-    const cooldownExists = await redis.exists(cooldownKey);
+    const cooldownExists = await redisClient.exists(cooldownKey);
     if (cooldownExists) {
       // get ttl to provide useful message
-      const ttl = await redis.ttl(cooldownKey);
-      await redis.del(lockKey); // release lock early
+      const ttl = await redisClient.ttl(cooldownKey);
+      await redisClient.del(lockKey); // release lock early
       return { success: false, error: `Try again in ${ttl} seconds.` };
     }
 
     const otp = genOTP();
 
     // Run atomic Lua: check attempts < limit, set otp, incr attempts + expiry, set cooldown
-    const res = (await (redis as Redis).eval(
+    const result = await redisClient.eval(
       GENERATE_LUA,
-      3,
+      4,
       attemptsKey,
       otpKey,
       cooldownKey,
-      otp,
+      lockKey,
       OTP_EXPIRY.toString(),
       OTP_ATTEMPTS_LIMIT.toString(),
       OTP_ATTEMPTS_WINDOW.toString(),
-      GENERATE_COOLDOWN.toString()
-    )) as string[] | null;
+      otp
+    ) as string[] | null;
 
-    // release lock
-    await redis.del(lockKey);
-
-    if (!res || res.length === 0) {
+    if (!result || result.length === 0) {
       return { success: false, error: 'Redis error during OTP generation' };
     }
 
-    if (res[0] === 'LIMIT') {
+    if (result[0] === 'LIMIT') {
       return { success: false, error: 'Too many OTP attempts. Please try again later.' };
     }
 
@@ -159,7 +157,7 @@ export async function generateOTP(email: string, token: string): Promise<OTPResu
     return { success: true, otp };
   } catch (err) {
     // ensure lock removal on error (best-effort)
-    try { await redis.del(lockKey); } catch (_) {}
+    try { const redis = await getRedisClient(); await redis.del(lockKey); } catch (_) {}
     console.error('generateOTP error:', err);
     return { success: false, error: 'Failed to generate OTP' };
   }
@@ -179,7 +177,8 @@ export async function verifyOTP(email: string, token: string, code: string): Pro
   const cooldownKey = `otp_cooldown:${email}:${token}`;
 
   try {
-    const res = (await (redis as Redis).eval(
+    const redisClient = await getRedisClient();
+    const result = await redisClient.eval(
       VERIFY_LUA,
       3,
       attemptsKey,
@@ -188,25 +187,25 @@ export async function verifyOTP(email: string, token: string, code: string): Pro
       code,
       OTP_ATTEMPTS_LIMIT.toString(),
       OTP_ATTEMPTS_WINDOW.toString()
-    )) as string[] | null;
+    ) as string[] | null;
 
-    if (!res || res.length === 0) {
+    if (!result || result.length === 0) {
       return { success: false, error: 'Redis error during verification' };
     }
 
-    const tag = res[0];
+    const tag = result[0];
 
     if (tag === 'LOCKED') {
       return { success: false, error: 'Too many failed attempts. Please request a new OTP.' };
     }
 
     if (tag === 'NO_OTP') {
-      // res[1] is newAttempts
+      // result[1] is newAttempts
       return { success: false, error: 'Invalid or expired OTP. Please request a new one.' };
     }
 
     if (tag === 'INVALID') {
-      const newAttempts = parseInt(res[1] || '0', 10);
+      const newAttempts = parseInt(result[1] || '0', 10);
       const remaining = Math.max(0, OTP_ATTEMPTS_LIMIT - newAttempts);
       return { success: false, error: `Invalid OTP. ${remaining} attempts remaining.` };
     }
@@ -230,15 +229,23 @@ export async function clearOTP(email: string, token: string): Promise<{ success:
     return { success: false, error: 'Missing parameters' };
   }
 
-  const otpKey = `otp:${email}:${token}`;
-  const attemptsKey = `otp_attempts:${email}:${token}`;
-  const cooldownKey = `otp_cooldown:${email}:${token}`;
-
   try {
-    await redis.del(otpKey, attemptsKey, cooldownKey);
+    const redisClient = await getRedisClient();
+    const otpKey = `otp:${email}:${token}`;
+    const attemptsKey = `otp_attempts:${email}:${token}`;
+    const cooldownKey = `otp_cooldown:${email}:${token}`;
+    const lockKey = `otp_lock:${email}:${token}`;
+
+    await Promise.all([
+      redisClient.del(otpKey),
+      redisClient.del(attemptsKey),
+      redisClient.del(cooldownKey),
+      redisClient.del(lockKey)
+    ]);
+
     return { success: true };
-  } catch (err) {
-    console.error('clearOTP error:', err);
+  } catch (error) {
+    console.error('Failed to clear OTP:', error);
     return { success: false, error: 'Failed to clear OTP' };
   }
 }
