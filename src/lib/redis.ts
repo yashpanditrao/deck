@@ -1,50 +1,88 @@
 import Redis from 'ioredis';
 
-if (!process.env.REDIS_URL) {
-  throw new Error('REDIS_URL environment variable is not set. Please configure your Redis Cloud connection.');
-}
+type RedisClient = Redis | null;
 
-const globalForRedis = global as unknown as {
-  redis: Redis | undefined;
+// This prevents multiple instances of the Redis client in development
+const globalWithRedis = global as typeof globalThis & {
+  _redisClient?: RedisClient;
 };
 
-let redisClient: Redis;
+let redisClient: RedisClient;
+let redisPromise: Promise<Redis>;
 
-function createRedisClient(): Redis {
-  console.log('🔌 Initializing Redis Cloud connection...');
-  
-  return new Redis(process.env.REDIS_URL as string, {
-    tls: {},
-    maxRetriesPerRequest: 5,
-    enableReadyCheck: true,
-    connectTimeout: 10000, // 10 seconds
-    retryStrategy: (times) => {
-      if (times > 5) {
-        console.error('❌ Max Redis connection retries reached');
-        return null; // Stop retrying after 5 attempts
+async function getRedisClient(): Promise<Redis> {
+  // If we're in the browser, throw a helpful error
+  if (typeof window !== 'undefined') {
+    throw new Error('Redis client cannot be used in the browser');
+  }
+
+  // In development, use the global instance if it exists
+  if (process.env.NODE_ENV === 'development' && globalWithRedis._redisClient) {
+    return globalWithRedis._redisClient;
+  }
+
+  // If we already have a client, return it
+  if (redisClient) {
+    return redisClient;
+  }
+
+  // If we're already creating a client, return the promise
+  if (redisPromise) {
+    return redisPromise;
+  }
+
+  // Create a new Redis client
+  redisPromise = (async () => {
+    try {
+      // Only check for REDIS_URL when actually trying to connect
+      if (!process.env.REDIS_URL) {
+        throw new Error('REDIS_URL environment variable is not set. Please configure your Redis Cloud connection.');
       }
-      const delay = Math.min(times * 1000, 10000); // Exponential backoff up to 10s
-      console.log(`⏳ Redis connection attempt ${times}, retrying in ${delay}ms...`);
-      return delay;
-    },
-  });
+
+      console.log('🔌 Initializing Redis Cloud connection...');
+      
+      const client = new Redis(process.env.REDIS_URL, {
+        tls: {},
+        maxRetriesPerRequest: 5,
+        enableReadyCheck: true,
+        connectTimeout: 10000,
+        retryStrategy: (times) => {
+          if (times > 5) {
+            console.error('❌ Max Redis connection retries reached');
+            return null;
+          }
+          const delay = Math.min(times * 1000, 10000);
+          console.log(`⏳ Redis connection attempt ${times}, retrying in ${delay}ms...`);
+          return delay;
+        },
+      });
+
+      // Set up event listeners
+      client.on('connect', () => {
+        console.log('✅ Successfully connected to Redis Cloud');
+      });
+
+      client.on('error', (err) => {
+        console.error('❌ Redis Cloud Error:', err.message);
+      });
+
+      // Cache the client
+      redisClient = client;
+      
+      // In development, store the client in the global object
+      if (process.env.NODE_ENV === 'development') {
+        globalWithRedis._redisClient = client;
+      }
+
+      return client;
+    } catch (error) {
+      console.error('Failed to initialize Redis client:', error);
+      throw error;
+    }
+  })();
+
+  return redisPromise;
 }
 
-if (!globalForRedis.redis) {
-  redisClient = createRedisClient();
-  
-  redisClient.on('connect', () => {
-    console.log('✅ Successfully connected to Redis Cloud');
-  });
-
-  redisClient.on('error', (err) => {
-    console.error('❌ Redis Cloud Error:', err.message);
-  });
-
-  // Cache the client in development and production
-  globalForRedis.redis = redisClient;
-} else {
-  redisClient = globalForRedis.redis;
-}
-
-export default redisClient;
+// Export the function to get the Redis client
+export default getRedisClient;
