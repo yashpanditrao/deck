@@ -12,6 +12,15 @@ export interface DeckShareLink {
   created_at: string;
   updated_at: string;
   is_downloadable: boolean;
+  
+  // New access control fields
+  allowed_domains?: string[] | null;
+  allowed_emails?: string[] | null;
+  allow_anonymous?: boolean;
+  require_verification?: boolean;
+  
+  // For backward compatibility
+  access_level?: 'public' | 'restricted' | 'whitelisted';
 }
 
 export interface DeckFile {

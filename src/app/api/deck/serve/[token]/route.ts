@@ -5,11 +5,7 @@ interface DeckFile {
   file_path: string;
 }
 
-interface ShareLink {
-  deck_files: DeckFile;
-}
-
-// Removed unused interface
+// Deck file interface
 
 export async function GET(
   request: NextRequest,
