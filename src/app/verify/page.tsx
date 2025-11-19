@@ -18,12 +18,37 @@ function VerifyContent() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [successMessage, setSuccessMessage] = useState('')
+    const [checkingAccess, setCheckingAccess] = useState(true)
 
+    // Check if this is a public link - if so, redirect to view
     useEffect(() => {
-        if (!token) {
-            setError('Invalid link. Token is missing.')
+        const checkAccessLevel = async () => {
+            if (!token) {
+                setError('Invalid link. Token is missing.')
+                setCheckingAccess(false)
+                return
+            }
+
+            try {
+                const response = await fetch(`/api/access/requirements?token=${token}`)
+                const data = await response.json()
+
+                if (response.ok && data.accessLevel === 'public') {
+                    // Public link - redirect to view page directly
+                    router.push(`/view?token=${token}`)
+                    return
+                }
+
+                // Not public - continue with verification flow
+                setCheckingAccess(false)
+            } catch (err) {
+                console.error('Error checking access level:', err)
+                setCheckingAccess(false)
+            }
         }
-    }, [token])
+
+        checkAccessLevel()
+    }, [token, router])
 
     const handleRequestCode = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -86,6 +111,15 @@ function VerifyContent() {
         } finally {
             setLoading(false)
         }
+    }
+
+    // Show loading while checking if it's a public link
+    if (checkingAccess) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <Loader2 className="h-8 w-8 animate-spin text-[#771144]" />
+            </div>
+        )
     }
 
     if (!token) {
