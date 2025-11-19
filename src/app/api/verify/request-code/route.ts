@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { DeckShareLink } from '@/types/database'
+import { Resend } from 'resend'
+import { OTPStorage } from '@/lib/otp-storage'
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,42 +47,65 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify the email matches the intended recipient
-    if (shareLink.recipient_email.toLowerCase() !== email.toLowerCase()) {
-      return NextResponse.json(
-        { error: 'Email does not match the intended recipient' },
-        { status: 403 }
-      )
+    // Check access permissions
+    const accessLevel = shareLink.access_level || 'restricted';
+
+    if (accessLevel === 'whitelisted') {
+      const allowedEmails = (shareLink.allowed_emails || []).map((e: string) => e.toLowerCase());
+      const allowedDomains = (shareLink.allowed_domains || []).map((d: string) => d.toLowerCase());
+      const userEmail = email.toLowerCase();
+      const userDomain = userEmail.split('@')[1];
+
+      const isEmailAllowed = allowedEmails.includes(userEmail);
+      const isDomainAllowed = allowedDomains.includes(userDomain);
+
+      if (!isEmailAllowed && !isDomainAllowed) {
+        // Generic error message to prevent email enumeration attack
+        return NextResponse.json(
+          { error: 'Unable to send verification code. Please try again later.' },
+          { status: 400 }
+        )
+      }
     }
+    // For 'restricted' access level, we allow any email but require verification
 
     // Generate a 6-digit verification code
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString()
-    const codeExpires = new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes from now
 
-    // Update the share link with verification code (admin needed for UPDATE)
-    // Use ID and double-check email for additional security
-    const { error: updateError } = await supabaseAdmin
-      .from('deck_share_links')
-      .update({
-        verification_code: verificationCode,
-        verification_code_expires: codeExpires,
-        updated_at: new Date().toISOString()
-      }as never)
-      .eq('id', shareLink.id)
-      .eq('recipient_email', email.toLowerCase())
+    // Store OTP using shared storage (with rate limiting)
+    OTPStorage.set(token, verificationCode, email);
 
-    if (updateError) {
-      console.error('Error updating verification code:', updateError)
-      return NextResponse.json(
-        { error: 'Failed to generate verification code' },
-        { status: 500 }
-      )
+    // Send email via Resend
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Development mode: OTP is', verificationCode);
     }
 
-    // Send email via Supabase (using Resend)
-    // Note: This would typically be handled by a Supabase Edge Function or database trigger
-    // For now, we'll return success and assume the email sending is handled separately
-    
+    try {
+      const resendApiKey = process.env.RESEND_API_KEY;
+      if (resendApiKey) {
+        const resend = new Resend(resendApiKey);
+        await resend.emails.send({
+          from: 'RaiseGate <noreply@raisegate.com>',
+          to: email,
+          subject: 'Your Verification Code',
+          text: `Your verification code is: ${verificationCode}`,
+          html: `
+            <div>
+              <h2>Your Verification Code</h2>
+              <p>Enter the following code to access the deck:</p>
+              <h1 style="font-size: 2.5rem; letter-spacing: 0.5rem; color: #771144;">${verificationCode}</h1>
+              <p>This code will expire in 10 minutes.</p>
+            </div>
+          `,
+        });
+      } else {
+        console.warn('RESEND_API_KEY not found, skipping email send');
+      }
+    } catch (emailError) {
+      console.error('Failed to send email:', emailError);
+      // Log error but return success to client to avoid blocking flow if email service is down
+    }
+
     return NextResponse.json({
       success: true,
       message: 'Verification code sent to your email'

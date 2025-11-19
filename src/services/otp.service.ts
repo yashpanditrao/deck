@@ -1,7 +1,6 @@
 // src/services/otp.service.ts
 import crypto from 'crypto';
 import getRedisClient from '@/lib/redis';
-import { Redis } from 'ioredis';
 
 type OTPResult = { success: true; otp: string } | { success: false; error: string };
 type VerificationResult = { success: true } | { success: false; error: string };
@@ -10,7 +9,6 @@ const OTP_EXPIRY = 15 * 60; // seconds
 const OTP_ATTEMPTS_LIMIT = 5;
 const OTP_ATTEMPTS_WINDOW = 60 * 60; // seconds (1 hour)
 const OTP_LENGTH = 6;
-const GENERATE_COOLDOWN = 30; // seconds - small throttle between generate calls
 const GENERATE_LOCK_TTL = 5; // seconds - short lock to avoid concurrent generation
 
 const genOTP = () =>
@@ -157,7 +155,7 @@ export async function generateOTP(email: string, token: string): Promise<OTPResu
     return { success: true, otp };
   } catch (err) {
     // ensure lock removal on error (best-effort)
-    try { const redis = await getRedisClient(); await redis.del(lockKey); } catch (_) {}
+    try { const redis = await getRedisClient(); await redis.del(lockKey); } catch (_) { }
     console.error('generateOTP error:', err);
     return { success: false, error: 'Failed to generate OTP' };
   }

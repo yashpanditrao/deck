@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { Database } from '@/types/database'
+import { verifyAccessToken } from '@/lib/jwt'
 
-interface DeckFile {
-  file_path: string;
+type DeckShareLink = Database['public']['Tables']['deck_share_links']['Row'] & {
+  deck_files: {
+    file_path: string
+  }
 }
-
-// Deck file interface
 
 export async function GET(
   request: NextRequest,
@@ -15,42 +17,73 @@ export async function GET(
 
   try {
     const { searchParams } = new URL(request.url)
-    const email = searchParams.get('email')
+    const accessToken = searchParams.get('accessToken')
 
-    if (!token || !email) {
+    if (!token) {
       return new NextResponse('Unauthorized', { status: 401 })
     }
 
-    // Verify email-token match
-    const verifyResponse = await fetch(`${request.nextUrl.origin}/api/verify/email-match`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, email })
-    })
-
-    if (!verifyResponse.ok) {
-      return new NextResponse('Verification failed', { status: 403 })
-    }
-
-    // Get file path from DB
+    // Get file path and access details from DB
     const { data: shareLink, error } = await supabase
       .from('deck_share_links')
       .select(`
+        *,
         deck_files!inner (
           file_path
         )
       `)
       .eq('token', token)
-      .single<{ deck_files: { file_path: string } }>()
+      .single() as { data: DeckShareLink | null, error: { message: string } | null }
 
-    if (error || !shareLink?.deck_files?.file_path) {
+    if (error || !shareLink || !shareLink.deck_files?.file_path) {
       return new NextResponse('File not found', { status: 404 })
+    }
+
+    // Check expiration
+    if (shareLink.expires_at && new Date(shareLink.expires_at) < new Date()) {
+      return new NextResponse('Link expired', { status: 410 })
+    }
+
+    // Check Access Permissions
+    const accessLevel = shareLink.access_level || 'restricted';
+
+    if (accessLevel !== 'public') {
+      // For Restricted/Whitelisted, we need a valid access token
+      if (!accessToken) {
+        return new NextResponse('Access token required', { status: 401 })
+      }
+
+      // Verify the JWT
+      const payload = await verifyAccessToken(accessToken)
+
+      if (!payload) {
+        return new NextResponse('Invalid or expired access token', { status: 403 })
+      }
+
+      // Verify the token in the JWT matches the requested token
+      if (payload.token !== token) {
+        return new NextResponse('Token mismatch', { status: 403 })
+      }
+
+      // For whitelisted access, verify the email is still allowed
+      if (accessLevel === 'whitelisted') {
+        const allowedEmails = (shareLink.allowed_emails || []).map(e => e.toLowerCase())
+        const allowedDomains = (shareLink.allowed_domains || []).map(d => d.toLowerCase())
+        const userEmail = payload.email.toLowerCase()
+        const userDomain = userEmail.split('@')[1]
+
+        const isEmailAllowed = allowedEmails.includes(userEmail)
+        const isDomainAllowed = allowedDomains.includes(userDomain)
+
+        if (!isEmailAllowed && !isDomainAllowed) {
+          return new NextResponse('Access revoked', { status: 403 })
+        }
+      }
     }
 
     const filePath = shareLink.deck_files.file_path
     console.log('Attempting to access file at path:', filePath)
 
-  
     const { data: signedUrlData, error: urlError } = await supabase.storage
       .from('deck')
       .createSignedUrl(filePath, 60)

@@ -26,7 +26,7 @@ interface PDFViewerProps {
   pdfLink: string;
   isDownloadable: boolean;
   token: string;
-  email: string;
+  accessToken?: string | null;
 }
 
 interface ViewerState {
@@ -41,7 +41,7 @@ const MAX_SCALE_DESKTOP = 3;
 const SCALE_STEP = 0.2;
 const MOBILE_BREAKPOINT = 768;
 
-const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, email }) => {
+const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, accessToken }) => {
   const [viewerState, setViewerState] = useState<ViewerState>({
     numPages: 0,
     pageNumber: 1,
@@ -199,18 +199,13 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
 
   // Move useMemo hooks to the top level
   const pdfUrl = useMemo(() => {
-    // Create a secure URL with the token and email
+    // Create a secure URL with the token and accessToken
     const url = new URL(`/api/deck/serve/${token}`, window.location.origin);
-    url.searchParams.append('email', email);
-    return url.toString();
-  }, [token, email]);
-
-  // Add custom headers for the PDF request
-  const options = useMemo(() => ({
-    httpHeaders: {
-      'x-verify-email': email
+    if (accessToken) {
+      url.searchParams.append('accessToken', accessToken);
     }
-  }), [email]);
+    return url.toString();
+  }, [token, accessToken]);
 
   if (!pdfUrl) {
     return (
@@ -230,7 +225,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
           <div className="text-red-400 text-6xl mb-4">⚠️</div>
           <h2 className="text-xl font-semibold mb-2">Unable to Load Document</h2>
           <p className="text-gray-300 mb-4">{error}</p>
-          <Button 
+          <Button
             onClick={() => window.location.reload()}
             className="bg-blue-600 hover:bg-blue-700"
           >
@@ -273,7 +268,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
       </div>
 
       {/* Main PDF Container */}
-      <div 
+      <div
         className={`absolute inset-0 ${isMobile ? 'top-16' : 'top-0'} flex items-center justify-center`}
         ref={setContainerRef}
         onTouchStart={handleTouchStart}
@@ -281,7 +276,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
         onTouchEnd={handleTouchEnd}
       >
         <Document
-          file={`/api/deck/serve/${token}?email=${encodeURIComponent(email)}`}
+          file={pdfUrl}
           onLoadSuccess={onDocumentLoadSuccess}
           onLoadError={onDocumentLoadError}
           loading={
@@ -292,7 +287,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
           error={
             <div className="flex flex-col items-center justify-center h-full text-red-500 p-4 text-center">
               <p className="mb-4">Failed to load document. Please try again.</p>
-              <Button 
+              <Button
                 onClick={() => window.location.reload()}
                 className="mt-2"
                 variant="outline"
@@ -303,8 +298,8 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
             </div>
           }
         >
-          <Page 
-            pageNumber={viewerState.pageNumber} 
+          <Page
+            pageNumber={viewerState.pageNumber}
             width={containerWidth ? Math.min(containerWidth * 0.9, 1200) : 800}
             renderTextLayer={false}
             renderAnnotationLayer={false}
@@ -337,7 +332,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
             </div>
           )}
         </Button>
-        
+
         <Button
           variant="ghost"
           size={isMobile ? "icon" : "default"}
@@ -365,7 +360,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
           <div className="text-sm text-white/90 bg-black/50 backdrop-blur-sm px-4 py-2 rounded-lg">
             Page {viewerState.pageNumber} of {viewerState.numPages}
           </div>
-          
+
           {/* Zoom Controls */}
           <div className="flex items-center bg-black/50 backdrop-blur-sm rounded-lg shadow-lg">
             <Button

@@ -7,7 +7,6 @@ type DeckShareLink = Database['public']['Tables']['deck_share_links']['Row'] & {
   deck: {
     id: string;
     company_id: string;
-    is_downloadable: boolean;
   } | null;
 };
 
@@ -26,14 +25,22 @@ export async function GET(request: Request) {
 
   try {
     // Get the share link with related deck data
+    console.log('Fetching requirements for token:', token);
     const { data: shareLink, error } = await supabase
       .from('deck_share_links')
       .select(`
         *,
-        deck:deck_id (id, company_id, is_downloadable)
+        deck:deck_id (id, company_id)
       `)
       .eq('token', token)
       .single() as { data: DeckShareLink | null; error: Error | null };
+
+    if (error) {
+      console.error('Supabase error fetching share link:', error);
+    }
+    if (!shareLink) {
+      console.error('No share link found for token:', token);
+    }
 
     if (error || !shareLink) {
       return NextResponse.json(
@@ -50,13 +57,12 @@ export async function GET(request: Request) {
       );
     }
 
-    // For now, we'll use the existing fields
-    // Once the database is migrated, we can uncomment the new access level logic
-    const accessLevel: 'public' | 'restricted' | 'whitelisted' = 'restricted';
-    const requireVerification = true;
-    const allowAnonymous = false;
-    const allowedDomains: string[] = [];
-    const allowedEmails: string[] = [];
+    // Map database fields to frontend requirements
+    const accessLevel = shareLink.access_level || 'restricted';
+    const requireVerification = shareLink.require_verification ?? true;
+    const allowAnonymous = shareLink.allow_anonymous ?? false;
+    const allowedDomains = shareLink.allowed_domains || [];
+    const allowedEmails = shareLink.allowed_emails || [];
 
     return NextResponse.json({
       accessLevel,
@@ -64,7 +70,7 @@ export async function GET(request: Request) {
       allowAnonymous,
       allowedDomains,
       allowedEmails,
-      isDownloadable: shareLink.deck?.is_downloadable === true,
+      isDownloadable: shareLink.is_downloadable,
       expiresAt: shareLink.expires_at,
       deckId: shareLink.deck_id,
       companyId: shareLink.company_id

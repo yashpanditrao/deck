@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase, supabaseAdmin } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { DeckShareLink } from '@/types/database'
+import { generateAccessToken } from '@/lib/jwt'
+import { OTPStorage } from '@/lib/otp-storage'
 
 export async function POST(request: NextRequest) {
   try {
-    const { token, code } = await request.json()
+    const { token, code, email } = await request.json()
 
     // Enhanced input validation
-    if (!token || !code || typeof token !== 'string' || typeof code !== 'string') {
+    if (!token || !code || !email || typeof token !== 'string' || typeof code !== 'string' || typeof email !== 'string') {
       return NextResponse.json(
-        { error: 'Token and code are required' },
+        { error: 'Token, code, and email are required' },
         { status: 400 }
       )
     }
@@ -25,12 +27,21 @@ export async function POST(request: NextRequest) {
     // Validate token format
     if (token.length < 10) {
       return NextResponse.json(
-        { error: 'Invalid token format' },
+        { error: 'Invalid verification code format' }, // Generic error
         { status: 400 }
       )
     }
 
-    // First validate token with anon client (RLS allows SELECT)
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { error: 'Invalid verification code format' }, // Generic error
+        { status: 400 }
+      )
+    }
+
+    // Get share link
     const { data: shareLink, error } = await supabase
       .from('deck_share_links')
       .select('*')
@@ -39,57 +50,33 @@ export async function POST(request: NextRequest) {
 
     if (error || !shareLink) {
       return NextResponse.json(
-        { error: 'Invalid token' },
+        { error: 'Invalid verification code format' }, // Generic error
         { status: 404 }
       )
     }
 
-    // Check if verification code exists and is not expired
-    if (!shareLink.verification_code || !shareLink.verification_code_expires) {
-      return NextResponse.json(
-        { error: 'No verification code found. Please request a new code.' },
-        { status: 400 }
-      )
-    }
+    // Verify OTP using secure method (constant-time comparison + rate limiting)
+    const verifyResult = OTPStorage.verify(token, code, email);
 
-    if (new Date(shareLink.verification_code_expires) < new Date()) {
+    if (!verifyResult.success) {
       return NextResponse.json(
-        { error: 'Verification code has expired. Please request a new code.' },
-        { status: 410 }
-      )
-    }
-
-    // Verify the code
-    if (shareLink.verification_code !== code) {
-      return NextResponse.json(
-        { error: 'Invalid verification code' },
+        { error: verifyResult.error || 'Invalid verification code' },
         { status: 403 }
       )
     }
 
-    // Mark as verified and clear verification code (admin needed for UPDATE)
-    const { error: updateError } = await supabaseAdmin
-      .from('deck_share_links')
-      .update({
-        is_verified: true,
-        verification_code: null,
-        verification_code_expires: null,
-        updated_at: new Date().toISOString()
-      } as never) // Using 'as never' to bypass TypeScript error
-      .eq('id', shareLink.id)
-      .eq('token', token)
-
-    if (updateError) {
-      console.error('Error updating verification status:', updateError)
-      return NextResponse.json(
-        { error: 'Failed to verify code' },
-        { status: 500 }
-      )
-    }
+    // OTP verified successfully - generate JWT access token
+    const accessLevel = shareLink.access_level || 'restricted'
+    const accessToken = await generateAccessToken({
+      token,
+      email: email.toLowerCase(),
+      accessLevel
+    })
 
     return NextResponse.json({
       success: true,
-      message: 'Email verified successfully'
+      message: 'Email verified successfully',
+      accessToken
     })
 
   } catch (err) {
