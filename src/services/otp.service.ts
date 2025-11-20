@@ -155,7 +155,7 @@ export async function generateOTP(email: string, token: string): Promise<OTPResu
     return { success: true, otp };
   } catch (err) {
     // ensure lock removal on error (best-effort)
-    try { const redis = await getRedisClient(); await redis.del(lockKey); } catch (_) { }
+    try { const redis = await getRedisClient(); await redis.del(lockKey); } catch { }
     console.error('generateOTP error:', err);
     return { success: false, error: 'Failed to generate OTP' };
   }

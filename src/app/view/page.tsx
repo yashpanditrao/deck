@@ -69,7 +69,7 @@ const ViewDeckContent = () => {
           window.location.href = `/verify?token=${token}`;
         }
 
-      } catch (_err) {
+      } catch {
         setError('Failed to check access permissions');
       }
     };

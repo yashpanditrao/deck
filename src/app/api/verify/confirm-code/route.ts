@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify OTP using secure method (constant-time comparison + rate limiting)
-    const verifyResult = OTPStorage.verify(token, code, email);
+    const verifyResult = await OTPStorage.verify(token, code, email);
 
     if (!verifyResult.success) {
       return NextResponse.json(

@@ -1,14 +1,14 @@
+import getRedisClient from './redis';
+
 /**
- * In-memory OTP storage with rate limiting
- * 
- * ⚠️ WARNING: This is for development/testing only!
- * In production, replace this with Redis or another distributed cache.
+ * Redis-based OTP storage with rate limiting
  * 
  * Security Features:
  * - Rate limiting (max 5 attempts per token)
- * - Auto-expiration (10 minutes)
+ * - Auto-expiration (via Redis TTL)
  * - One-time use
  * - Constant-time comparison
+ * - Request rate limiting per email
  */
 
 interface OTPData {
@@ -18,104 +18,122 @@ interface OTPData {
     attempts: number; // Track failed attempts
 }
 
-// In-memory store (shared across request-code and confirm-code)
-const otpStore = new Map<string, OTPData>();
-
-// Rate limiting: Track failed attempts per token
 const MAX_ATTEMPTS = 5;
+const MAX_REQUESTS_PER_EMAIL = 3; // Max OTP requests per email per hour
+const REQUEST_WINDOW = 60 * 60; // 1 hour in seconds
 
 export const OTPStorage = {
     /**
+     * Check if email has exceeded request rate limit
+     */
+    async checkRateLimit(email: string): Promise<{ allowed: boolean; remaining: number }> {
+        const redis = await getRedisClient();
+        const key = `otp:ratelimit:${email.toLowerCase()}`;
+        const count = await redis.incr(key);
+
+        if (count === 1) {
+            // First request, set expiration
+            await redis.expire(key, REQUEST_WINDOW);
+        }
+
+        const remaining = Math.max(0, MAX_REQUESTS_PER_EMAIL - count);
+        return {
+            allowed: count <= MAX_REQUESTS_PER_EMAIL,
+            remaining
+        };
+    },
+
+    /**
      * Store an OTP for a given token
      */
-    set(token: string, code: string, email: string, expiresInMs: number = 10 * 60 * 1000) {
-        otpStore.set(token, {
+    async set(token: string, code: string, email: string, expiresInMs: number = 10 * 60 * 1000) {
+        const redis = await getRedisClient();
+        const data: OTPData = {
             code,
             email: email.toLowerCase(),
             expires: Date.now() + expiresInMs,
             attempts: 0
-        });
+        };
+        // Use setex for automatic expiration
+        await redis.setex(`otp:${token}`, Math.ceil(expiresInMs / 1000), JSON.stringify(data));
     },
 
     /**
      * Get OTP data for a token
      */
-    get(token: string): OTPData | undefined {
-        return otpStore.get(token);
+    async get(token: string): Promise<OTPData | undefined> {
+        const redis = await getRedisClient();
+        const data = await redis.get(`otp:${token}`);
+        return data ? JSON.parse(data) : undefined;
     },
 
     /**
      * Verify OTP with constant-time comparison and rate limiting
      * @returns { success: boolean, error?: string }
      */
-    verify(token: string, code: string, email: string): { success: boolean; error?: string } {
-        const data = otpStore.get(token);
+    async verify(token: string, code: string, email: string): Promise<{ success: boolean; error?: string }> {
+        const redis = await getRedisClient();
+        const key = `otp:${token}`;
+        const dataStr = await redis.get(key);
 
-        if (!data) {
+        if (!dataStr) {
             return { success: false, error: 'No verification code found. Please request a new code.' };
         }
 
-        // Check expiration
+        const data: OTPData = JSON.parse(dataStr);
+
+        // Check expiration (double check in case Redis TTL hasn't fired yet)
         if (Date.now() > data.expires) {
-            otpStore.delete(token);
+            await redis.del(key);
             return { success: false, error: 'Verification code has expired. Please request a new code.' };
         }
 
         // Check rate limiting
         if (data.attempts >= MAX_ATTEMPTS) {
-            otpStore.delete(token);
+            await redis.del(key);
             return { success: false, error: 'Too many failed attempts. Please request a new code.' };
         }
 
         // Verify email matches
         if (data.email.toLowerCase() !== email.toLowerCase()) {
             data.attempts++;
+            const ttl = await redis.ttl(key);
+            if (ttl > 0) {
+                await redis.setex(key, ttl, JSON.stringify(data));
+            }
             return { success: false, error: 'Email mismatch. Please use the email you requested the code with.' };
         }
 
         // Constant-time comparison to prevent timing attacks
         if (!constantTimeCompare(data.code, code)) {
             data.attempts++;
+            const ttl = await redis.ttl(key);
+            if (ttl > 0) {
+                await redis.setex(key, ttl, JSON.stringify(data));
+            }
             return { success: false, error: 'Invalid verification code' };
         }
 
         // Success - delete OTP (one-time use)
-        otpStore.delete(token);
+        await redis.del(key);
         return { success: true };
     },
 
     /**
      * Delete OTP for a token
      */
-    delete(token: string): boolean {
-        return otpStore.delete(token);
+    async delete(token: string): Promise<number> {
+        const redis = await getRedisClient();
+        return redis.del(`otp:${token}`);
     },
 
     /**
      * Check if OTP exists and is not expired
      */
-    isValid(token: string): boolean {
-        const data = otpStore.get(token);
-        if (!data) return false;
-
-        if (Date.now() > data.expires) {
-            otpStore.delete(token); // Auto-cleanup expired
-            return false;
-        }
-
-        return true;
-    },
-
-    /**
-     * Clean up expired OTPs (call periodically)
-     */
-    cleanup() {
-        const now = Date.now();
-        for (const [token, data] of otpStore.entries()) {
-            if (now > data.expires) {
-                otpStore.delete(token);
-            }
-        }
+    async isValid(token: string): Promise<boolean> {
+        const redis = await getRedisClient();
+        const exists = await redis.exists(`otp:${token}`);
+        return exists === 1;
     }
 };
 
@@ -134,9 +152,4 @@ function constantTimeCompare(a: string, b: string): boolean {
     }
 
     return result === 0;
-}
-
-// Auto-cleanup every 5 minutes
-if (typeof setInterval !== 'undefined') {
-    setInterval(() => OTPStorage.cleanup(), 5 * 60 * 1000);
 }

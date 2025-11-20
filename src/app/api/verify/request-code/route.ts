@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { DeckShareLink } from '@/types/database'
 import { Resend } from 'resend'
 import { OTPStorage } from '@/lib/otp-storage'
+import { randomInt } from 'crypto'
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,11 +70,21 @@ export async function POST(request: NextRequest) {
     }
     // For 'restricted' access level, we allow any email but require verification
 
-    // Generate a 6-digit verification code
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString()
+    // Check rate limiting for this email (prevent spam)
+    const rateLimit = await OTPStorage.checkRateLimit(email);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many verification requests. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
+    // Generate a cryptographically secure 6-digit verification code
+    // Using crypto.randomInt instead of Math.random for security
+    const verificationCode = randomInt(100000, 1000000).toString()
 
     // Store OTP using shared storage (with rate limiting)
-    OTPStorage.set(token, verificationCode, email);
+    await OTPStorage.set(token, verificationCode, email);
 
     // Send email via Resend
     if (process.env.NODE_ENV === 'development') {
@@ -82,14 +93,21 @@ export async function POST(request: NextRequest) {
 
     try {
       const resendApiKey = process.env.RESEND_API_KEY;
-      if (resendApiKey) {
-        const resend = new Resend(resendApiKey);
-        await resend.emails.send({
-          from: 'RaiseGate <noreply@raisegate.com>',
-          to: email,
-          subject: 'Your Verification Code',
-          text: `Your verification code is: ${verificationCode}`,
-          html: `
+      if (!resendApiKey) {
+        console.error('RESEND_API_KEY is missing in environment variables');
+        return NextResponse.json(
+          { error: 'Email service configuration error' },
+          { status: 500 }
+        );
+      }
+
+      const resend = new Resend(resendApiKey);
+      const { data, error: resendError } = await resend.emails.send({
+        from: 'RaiseGate <noreply@raisegate.com>',
+        to: email,
+        subject: 'Your Verification Code',
+        text: `Your verification code is: ${verificationCode}`,
+        html: `
             <div>
               <h2>Your Verification Code</h2>
               <p>Enter the following code to access the deck:</p>
@@ -97,13 +115,24 @@ export async function POST(request: NextRequest) {
               <p>This code will expire in 10 minutes.</p>
             </div>
           `,
-        });
-      } else {
-        console.warn('RESEND_API_KEY not found, skipping email send');
+      });
+
+      if (resendError) {
+        console.error('Resend API Error:', resendError);
+        return NextResponse.json(
+          { error: 'Failed to send verification email' },
+          { status: 500 }
+        );
       }
+
+      console.log('Email sent successfully:', data);
+
     } catch (emailError) {
-      console.error('Failed to send email:', emailError);
-      // Log error but return success to client to avoid blocking flow if email service is down
+      console.error('Failed to send email (exception):', emailError);
+      return NextResponse.json(
+        { error: 'Failed to send verification email' },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({

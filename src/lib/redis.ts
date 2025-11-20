@@ -16,13 +16,25 @@ async function getRedisClient(): Promise<Redis> {
     throw new Error('Redis client cannot be used in the browser');
   }
 
-  // In development, use the global instance if it exists
+  // Helper to check if client is usable
+  const isClientUsable = (client: RedisClient) => {
+    return client && client.status !== 'end';
+  };
+
+  // In development, use the global instance if it exists and is usable
   if (process.env.NODE_ENV === 'development' && globalWithRedis._redisClient) {
-    return globalWithRedis._redisClient;
+    if (isClientUsable(globalWithRedis._redisClient)) {
+      return globalWithRedis._redisClient!;
+    }
+    // If existing client is closed, clear it
+    console.log('⚠️ Global Redis client is closed, creating new connection...');
+    globalWithRedis._redisClient = null;
+    redisClient = null;
+    redisPromise = undefined as unknown as Promise<Redis>;
   }
 
-  // If we already have a client, return it
-  if (redisClient) {
+  // If we already have a local usable client, return it
+  if (redisClient && isClientUsable(redisClient)) {
     return redisClient;
   }
 
@@ -40,22 +52,45 @@ async function getRedisClient(): Promise<Redis> {
       }
 
       console.log('🔌 Initializing Redis Cloud connection...');
-      
-      const client = new Redis(process.env.REDIS_URL, {
-        tls: {},
-        maxRetriesPerRequest: 5,
+
+      const isTls = process.env.REDIS_URL.startsWith('rediss://');
+      const options: {
+        maxRetriesPerRequest: number;
+        enableReadyCheck: boolean;
+        connectTimeout: number;
+        lazyConnect: boolean;
+        maxLoadingRetryTime: number;
+        retryStrategy: (times: number) => number | null;
+        tls?: Record<string, unknown>;
+      } = {
+        maxRetriesPerRequest: 3,
         enableReadyCheck: true,
         connectTimeout: 10000,
-        retryStrategy: (times) => {
-          if (times > 5) {
+        lazyConnect: false,
+        // Prevent memory leaks from connection pooling
+        maxLoadingRetryTime: 10000,
+        retryStrategy: (times: number) => {
+          if (times > 3) {
             console.error('❌ Max Redis connection retries reached');
+            // Clear the promise to allow fresh retry
+            redisPromise = undefined as unknown as Promise<Redis>;
+            redisClient = null;
+            if (process.env.NODE_ENV === 'development') {
+              globalWithRedis._redisClient = undefined;
+            }
             return null;
           }
-          const delay = Math.min(times * 1000, 10000);
+          const delay = Math.min(times * 1000, 5000);
           console.log(`⏳ Redis connection attempt ${times}, retrying in ${delay}ms...`);
           return delay;
         },
-      });
+      };
+
+      if (isTls) {
+        options.tls = {};
+      }
+
+      const client = new Redis(process.env.REDIS_URL, options);
 
       // Set up event listeners
       client.on('connect', () => {
@@ -66,9 +101,29 @@ async function getRedisClient(): Promise<Redis> {
         console.error('❌ Redis Cloud Error:', err.message);
       });
 
+      client.on('end', () => {
+        console.log('🔌 Redis connection closed');
+        // Clear cache so next request tries to reconnect
+        redisClient = null;
+        if (process.env.NODE_ENV === 'development') {
+          globalWithRedis._redisClient = undefined;
+        }
+        redisPromise = undefined as unknown as Promise<Redis>;
+      });
+
+      client.on('close', () => {
+        console.log('🔌 Redis connection closed unexpectedly');
+        // Clear cache to prevent memory leak
+        redisClient = null;
+        if (process.env.NODE_ENV === 'development') {
+          globalWithRedis._redisClient = undefined;
+        }
+        redisPromise = undefined as unknown as Promise<Redis>;
+      });
+
       // Cache the client
       redisClient = client;
-      
+
       // In development, store the client in the global object
       if (process.env.NODE_ENV === 'development') {
         globalWithRedis._redisClient = client;
@@ -77,6 +132,7 @@ async function getRedisClient(): Promise<Redis> {
       return client;
     } catch (error) {
       console.error('Failed to initialize Redis client:', error);
+      redisPromise = undefined as unknown as Promise<Redis>; // Reset promise on failure
       throw error;
     }
   })();

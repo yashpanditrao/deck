@@ -73,7 +73,7 @@ function VerifyContent() {
             } else {
                 setError(data.error || 'Failed to send verification code')
             }
-        } catch (_err) {
+        } catch {
             setError('Network error. Please try again.')
         } finally {
             setLoading(false)
@@ -106,7 +106,7 @@ function VerifyContent() {
             } else {
                 setError(data.error || 'Invalid verification code')
             }
-        } catch (_err) {
+        } catch {
             setError('Network error. Please try again.')
         } finally {
             setLoading(false)
