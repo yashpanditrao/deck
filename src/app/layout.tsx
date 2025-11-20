@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Toaster } from "sonner";
 import "./globals.css";
+import { Toaster } from "sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,11 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Decks by RaiseGate",
-  description: "Deck sharing platform",
-  icons: {
-    icon: "/icon.svg",
-  },
+  title: "RaiseGate Deck Viewer",
+  description: "Secure deck viewing platform for RaiseGate shared content",
 };
 
 export default function RootLayout({
@@ -29,10 +26,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         {children}
-        <Toaster richColors position="top-right" />
+        <Toaster />
       </body>
     </html>
   );

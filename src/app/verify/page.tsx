@@ -116,15 +116,15 @@ function VerifyContent() {
     // Show loading while checking if it's a public link
     if (checkingAccess) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                <Loader2 className="h-8 w-8 animate-spin text-[#771144]" />
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
         )
     }
 
     if (!token) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+            <div className="min-h-screen flex items-center justify-center bg-background p-4">
                 <Card className="w-full max-w-md">
                     <CardHeader>
                         <CardTitle className="text-red-600">Error</CardTitle>
@@ -138,17 +138,17 @@ function VerifyContent() {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="min-h-screen flex items-center justify-center bg-background p-4">
             <Card className="w-full max-w-md shadow-lg">
                 <CardHeader className="space-y-1">
                     <div className="flex justify-center mb-4">
                         {step === 'email' ? (
                             <div className="p-3 bg-blue-50 rounded-full">
-                                <Mail className="h-8 w-8 text-[#771144]" />
+                                <Mail className="h-8 w-8 text-primary" />
                             </div>
                         ) : (
                             <div className="p-3 bg-blue-50 rounded-full">
-                                <Lock className="h-8 w-8 text-[#771144]" />
+                                <Lock className="h-8 w-8 text-primary" />
                             </div>
                         )}
                     </div>
@@ -188,7 +188,7 @@ function VerifyContent() {
                             </div>
                             <Button
                                 type="submit"
-                                className="w-full h-11 bg-[#771144] hover:bg-[#5a0d33]"
+                                className="w-full h-11"
                                 disabled={loading}
                             >
                                 {loading ? (
@@ -219,7 +219,7 @@ function VerifyContent() {
                             </div>
                             <Button
                                 type="submit"
-                                className="w-full h-11 bg-[#771144] hover:bg-[#5a0d33]"
+                                className="w-full h-11"
                                 disabled={loading || otp.length !== 6}
                             >
                                 {loading ? (
@@ -251,8 +251,8 @@ function VerifyContent() {
 export default function VerifyPage() {
     return (
         <Suspense fallback={
-            <div className="min-h-screen flex items-center justify-center bg-gray-50">
-                <Loader2 className="h-8 w-8 animate-spin text-[#771144]" />
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
         }>
             <VerifyContent />
