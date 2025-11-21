@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase'
 
 interface ShareLinkWithDeckFile {
   id: string
-  company_id: string
+  user_id: string
   recipient_email: string
   token: string
   verification_code: string | null
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
       `)
       .eq('token', token)
       .single<ShareLinkWithDeckFile>()
-    
+
     if (error || !result) {
       return NextResponse.json(
         { error: 'Invalid or expired token' },

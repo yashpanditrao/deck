@@ -6,7 +6,7 @@ import { Database } from '@/types/database';
 type DeckShareLink = Database['public']['Tables']['deck_share_links']['Row'] & {
   deck: {
     id: string;
-    company_id: string;
+    user_id: string;
   } | null;
 };
 
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
       .from('deck_share_links')
       .select(`
         *,
-        deck:deck_id (id, company_id)
+        deck:deck_id (id, user_id)
       `)
       .eq('token', token)
       .single() as { data: DeckShareLink | null; error: Error | null };
@@ -73,7 +73,7 @@ export async function GET(request: Request) {
       isDownloadable: shareLink.is_downloadable,
       expiresAt: shareLink.expires_at,
       deckId: shareLink.deck_id,
-      companyId: shareLink.company_id
+      userId: shareLink.user_id
     });
 
   } catch (error) {

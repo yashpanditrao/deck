@@ -1,7 +1,7 @@
 export interface DeckShareLink {
   id: string;
   deck_id: string | null;
-  company_id: string;
+  user_id: string;
   shared_by_user_id: string;
   recipient_email: string;
   token: string;
@@ -22,7 +22,7 @@ export interface DeckShareLink {
 
 export interface DeckFile {
   id: string;
-  company_id: string;
+  user_id: string;
   file_path: string;
   uploaded_at: string;
   thumbnail_path: string;
