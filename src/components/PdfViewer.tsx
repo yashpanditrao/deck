@@ -263,7 +263,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
   return (
     <div className="fixed inset-0 bg-black text-white select-none overflow-hidden">
       {/* Header - Title and Action Buttons */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/80 to-transparent p-4">
+      <div className={`absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/80 to-transparent p-4 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 hover:opacity-100' : ''}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Shield className="w-5 h-5 text-blue-400" />
@@ -345,7 +345,13 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
         >
           <Page
             pageNumber={viewerState.pageNumber}
-            width={containerWidth ? Math.min(containerWidth * 0.9, 1200) : 800}
+            width={
+              containerWidth
+                ? isFullscreen
+                  ? Math.min(containerWidth * 0.98, 2400)
+                  : Math.min(containerWidth * 0.9, 1200)
+                : 800
+            }
             scale={viewerState.scale}
             renderTextLayer={false}
             renderAnnotationLayer={false}
@@ -359,7 +365,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
       </div>
 
       {/* Navigation Buttons */}
-      <div className={`absolute ${isMobile ? 'left-4 right-4 bottom-24' : 'left-4 right-4 top-1/2 -translate-y-1/2'} flex items-center justify-between z-20`}>
+      <div className={`absolute ${isMobile ? 'left-4 right-4 bottom-24' : 'left-4 right-4 top-1/2 -translate-y-1/2'} flex items-center justify-between z-20 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 hover:opacity-100' : ''}`}>
         <Button
           variant="ghost"
           size={isMobile ? "icon" : "default"}
@@ -400,7 +406,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
       </div>
 
       {/* Bottom Controls - Zoom and Page Count */}
-      <div className={`absolute ${isMobile ? 'bottom-4' : 'bottom-0'} left-0 right-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-4`}>
+      <div className={`absolute ${isMobile ? 'bottom-4' : 'bottom-0'} left-0 right-0 z-10 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 hover:opacity-100' : ''}`}>
         <div className="flex items-center justify-center gap-4">
           {/* Page Info */}
           <div className="text-sm text-white/90 bg-black/50 backdrop-blur-sm px-4 py-2 rounded-lg">
