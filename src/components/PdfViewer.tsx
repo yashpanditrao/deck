@@ -14,7 +14,9 @@ import {
   ZoomIn,
   ZoomOut,
   Shield,
-  RotateCw as RefreshCw
+  RotateCw as RefreshCw,
+  Maximize,
+  Minimize
 } from "lucide-react";
 
 // Configure PDF.js worker - use local file
@@ -55,6 +57,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
   const [isMobile, setIsMobile] = useState(false);
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Calculate max scale based on device type
   const maxScale = isMobile ? MAX_SCALE_MOBILE : MAX_SCALE_DESKTOP;
@@ -89,6 +92,17 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
     }));
   }, []);
 
+  // Fullscreen handlers
+  const toggleFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error('Error attempting to enable fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  }, []);
+
   // Reset zoom functionality removed as it's not used
 
   // Handle device type detection
@@ -102,6 +116,16 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
     checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  // Handle fullscreen changes
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
   // Handle container resizing
@@ -238,32 +262,53 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
 
   return (
     <div className="fixed inset-0 bg-black text-white select-none overflow-hidden">
-      {/* Header - Title and Download Button */}
+      {/* Header - Title and Action Buttons */}
       <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/80 to-transparent p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <Shield className="w-5 h-5 text-blue-400" />
             <h1 className="font-semibold text-lg">Shared Pitch Deck</h1>
           </div>
-          {isDownloadable && (
+          <div className="flex items-center gap-2">
             <Button
               variant="default"
               size="sm"
-              onClick={() => {
-                const link = document.createElement('a');
-                link.href = pdfLink;
-                link.download = `deck-${new Date().toISOString().split('T')[0]}.pdf`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              }}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md flex items-center space-x-2 shadow-lg transition-colors duration-200"
-              title="Download PDF"
+              onClick={toggleFullscreen}
+              className="bg-gray-700 hover:bg-gray-600 text-white font-medium px-4 py-2 rounded-md flex items-center space-x-2 shadow-lg transition-colors duration-200"
+              title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
             >
-              <Download className="w-4 h-4" />
-              {!isMobile && <span>Download PDF</span>}
+              {isFullscreen ? (
+                <>
+                  <Minimize className="w-4 h-4" />
+                  {!isMobile && <span>Exit Fullscreen</span>}
+                </>
+              ) : (
+                <>
+                  <Maximize className="w-4 h-4" />
+                  {!isMobile && <span>Fullscreen</span>}
+                </>
+              )}
             </Button>
-          )}
+            {isDownloadable && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = pdfLink;
+                  link.download = `deck-${new Date().toISOString().split('T')[0]}.pdf`;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-md flex items-center space-x-2 shadow-lg transition-colors duration-200"
+                title="Download PDF"
+              >
+                <Download className="w-4 h-4" />
+                {!isMobile && <span>Download PDF</span>}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
