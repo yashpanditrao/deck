@@ -129,7 +129,7 @@ export async function GET(
     }
 
     // Serve PDF inline with browser caching enabled
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'inline; filename="document.pdf"',
