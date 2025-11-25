@@ -51,7 +51,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
   });
   const [containerRef, setContainerRef] = useState<HTMLDivElement | null>(null);
   const [containerWidth, setContainerWidth] = useState<number>();
-  const [, setContainerHeight] = useState<number>();
+  const [containerHeight, setContainerHeight] = useState<number>();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -231,6 +231,33 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
     return url.toString();
   }, [token, accessToken]);
 
+  // Calculate optimal page width to maintain aspect ratio and prevent cropping
+  const calculatePageWidth = useMemo(() => {
+    if (!containerWidth || !containerHeight) return 800;
+
+    // Typical pitch deck aspect ratio is 16:9 (landscape)
+    const deckAspectRatio = 16 / 9;
+    const containerAspectRatio = containerWidth / containerHeight;
+
+    if (isFullscreen) {
+      // In fullscreen, calculate width that fits both dimensions
+      // Leave some padding for controls
+      const availableHeight = containerHeight * 0.85; // 85% to account for controls
+      const availableWidth = containerWidth * 0.98;
+
+      // Calculate width based on height constraint
+      const widthFromHeight = availableHeight * deckAspectRatio;
+      
+      // Use the smaller of the two to ensure it fits
+      const optimalWidth = Math.min(widthFromHeight, availableWidth);
+      
+      return Math.min(optimalWidth, 2400);
+    } else {
+      // Non-fullscreen mode
+      return Math.min(containerWidth * 0.9, 1200);
+    }
+  }, [containerWidth, containerHeight, isFullscreen]);
+
   if (!pdfUrl) {
     return (
       <div className="fixed inset-0 bg-gray-900 flex items-center justify-center">
@@ -314,7 +341,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
 
       {/* Main PDF Container */}
       <div
-        className={`absolute inset-0 ${isMobile ? 'top-16' : 'top-0'} flex items-center justify-center`}
+        className={`absolute inset-0 ${isMobile ? 'top-16' : 'top-0'} flex items-center justify-center overflow-hidden`}
         ref={setContainerRef}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -346,13 +373,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
         >
           <Page
             pageNumber={viewerState.pageNumber}
-            width={
-              containerWidth
-                ? isFullscreen
-                  ? Math.min(containerWidth * 0.98, 2400)
-                  : Math.min(containerWidth * 0.9, 1200)
-                : 800
-            }
+            width={calculatePageWidth}
             scale={viewerState.scale}
             renderTextLayer={false}
             renderAnnotationLayer={false}
