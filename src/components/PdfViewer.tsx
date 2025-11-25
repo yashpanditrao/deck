@@ -301,6 +301,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
           <Page
             pageNumber={viewerState.pageNumber}
             width={containerWidth ? Math.min(containerWidth * 0.9, 1200) : 800}
+            scale={viewerState.scale}
             renderTextLayer={false}
             renderAnnotationLayer={false}
             loading={
