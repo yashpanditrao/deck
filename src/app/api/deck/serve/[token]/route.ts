@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { Database } from '@/types/database'
 import { verifyAccessToken } from '@/lib/jwt'
+import { getCachedPDF, cachePDF } from '@/lib/pdf-cache'
 
 type DeckShareLink = Database['public']['Tables']['deck_share_links']['Row'] & {
   deck_files: {
@@ -84,46 +85,58 @@ export async function GET(
     const filePath = shareLink.deck_files.file_path
     console.log('Attempting to access file at path:', filePath)
 
-    const { data: signedUrlData, error: urlError } = await supabase.storage
-      .from('deck')
-      .createSignedUrl(filePath, 60)
+    // Try to get PDF from cache first
+    let buffer = await getCachedPDF(filePath)
 
-    if (urlError || !signedUrlData?.signedUrl) {
-      return NextResponse.json(
-        {
-          error: 'Error generating file URL',
-          details: urlError?.message || 'Unknown error',
-          filePath
-        },
-        { status: 500 }
-      )
+    // If not in cache, fetch from Supabase and cache it
+    if (!buffer) {
+      console.log('Fetching PDF from Supabase storage...')
+      
+      const { data: signedUrlData, error: urlError } = await supabase.storage
+        .from('deck')
+        .createSignedUrl(filePath, 60)
+
+      if (urlError || !signedUrlData?.signedUrl) {
+        return NextResponse.json(
+          {
+            error: 'Error generating file URL',
+            details: urlError?.message || 'Unknown error',
+            filePath
+          },
+          { status: 500 }
+        )
+      }
+
+      // Fetch file content
+      const fileResponse = await fetch(signedUrlData.signedUrl, {
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      })
+
+      if (!fileResponse.ok) {
+        console.error('Error fetching file:', fileResponse.statusText)
+        return new NextResponse('Error fetching file', { status: 500 })
+      }
+
+      const arrayBuffer = await fileResponse.arrayBuffer()
+      buffer = Buffer.from(arrayBuffer)
+
+      if (buffer.length === 0) {
+        throw new Error('Downloaded file is empty')
+      }
+
+      // Cache the PDF for 2 weeks
+      await cachePDF(filePath, buffer)
     }
 
-    // Fetch file content
-    const fileResponse = await fetch(signedUrlData.signedUrl, {
-      headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
-    })
-
-    if (!fileResponse.ok) {
-      console.error('Error fetching file:', fileResponse.statusText)
-      return new NextResponse('Error fetching file', { status: 500 })
-    }
-
-    const arrayBuffer = await fileResponse.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-
-    if (buffer.length === 0) {
-      throw new Error('Downloaded file is empty')
-    }
-
-    // Serve PDF inline
+    // Serve PDF inline with browser caching enabled
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'inline; filename="document.pdf"',
-        'Cache-Control': 'no-store, max-age=0',
-        'Pragma': 'no-cache',
-        'X-Content-Type-Options': 'nosniff'
+        // Enable browser caching for 1 hour for faster subsequent loads
+        'Cache-Control': 'private, max-age=3600, stale-while-revalidate=86400',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Cache-Status': buffer ? 'HIT' : 'MISS'
       }
     })
   } catch (error) {
