@@ -145,4 +145,4 @@ Make sure to configure your environment variables in the deployment platform.
 - **Field-Specific Queries**: Only select required fields, never `SELECT *`
 - **Double Email Verification**: Email matching enforced at multiple levels
 - **Code Format Validation**: 6-digit codes must match exact pattern
-- **Database-Level Security**: ID-based updates instead of token-based
+- **Database-Level Security**: ID-based updates instead of token-based.
