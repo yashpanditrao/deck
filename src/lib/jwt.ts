@@ -47,3 +47,6 @@ export async function verifyAccessToken(
         return null
     }
 }
+
+// Alias for backwards compatibility
+export const verifyJWT = verifyAccessToken;

@@ -38,6 +38,35 @@ export interface VerificationSession {
   expires_at: string;
 }
 
+export interface DeckView {
+  id: string;
+  deck_id: string;
+  share_link_id: string;
+  viewer_email: string | null;
+  viewer_id: string | null; // Session ID for anonymous users
+  started_at: string;
+  last_active_at: string;
+  total_duration: number; // in seconds
+  pages_viewed: number[];
+  completed: boolean;
+  total_pages: number; // Total pages in the deck
+  user_agent: string | null;
+  ip_address: string | null;
+  country: string | null;
+  city: string | null;
+}
+
+export interface PageView {
+  id: string;
+  view_id: string;
+  page_number: number;
+  duration: number; // in seconds
+  viewed_at: string;
+}
+
+export type DeckViewInsert = Omit<DeckView, 'id'>;
+export type PageViewInsert = Omit<PageView, 'id'>;
+
 export interface Database {
   public: {
     Tables: {
@@ -54,6 +83,16 @@ export interface Database {
         Update: Partial<Omit<DeckFile, 'id'>> & {
           uploaded_at?: string;
         };
+      };
+      deck_views: {
+        Row: DeckView;
+        Insert: DeckViewInsert;
+        Update: Partial<DeckViewInsert>;
+      };
+      page_views: {
+        Row: PageView;
+        Insert: PageViewInsert;
+        Update: Partial<PageViewInsert>;
       };
     };
   };

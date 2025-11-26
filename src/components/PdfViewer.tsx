@@ -37,6 +37,13 @@ interface ViewerState {
   scale: number;
 }
 
+interface AnalyticsSession {
+  viewId: string;
+  startTime: number;
+  lastPageTime: number;
+  currentPage: number;
+}
+
 const MIN_SCALE = 0.5;
 const MAX_SCALE_MOBILE = 2.5;
 const MAX_SCALE_DESKTOP = 3;
@@ -58,6 +65,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [analyticsSession, setAnalyticsSession] = useState<AnalyticsSession | null>(null);
 
   // Calculate max scale based on device type
   const maxScale = isMobile ? MAX_SCALE_MOBILE : MAX_SCALE_DESKTOP;
@@ -219,6 +227,143 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
       document.body.style.webkitUserSelect = '';
     };
   }, [previousPage, nextPage]);
+
+  // Analytics: Initialize or resume session
+  useEffect(() => {
+    // Prevent duplicate initialization
+    if (analyticsSession) return;
+
+    const initAnalytics = async () => {
+      try {
+        // Check if there's an existing session in localStorage
+        const storageKey = `analytics_session_${token}`;
+        const storedSession = localStorage.getItem(storageKey);
+        
+        let session: AnalyticsSession | null = null;
+        
+        if (storedSession) {
+          try {
+            const parsed = JSON.parse(storedSession);
+            // Check if session is less than 24 hours old
+            const sessionAge = Date.now() - parsed.startTime;
+            if (sessionAge < 24 * 60 * 60 * 1000) {
+              session = parsed;
+            }
+          } catch {
+            // Invalid stored session, create new one
+          }
+        }
+
+        // Start or resume session
+        const response = await fetch('/api/analytics/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token,
+            accessToken,
+            eventType: 'view_start',
+            viewId: session?.viewId,
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          const newSession: AnalyticsSession = {
+            viewId: result.viewId,
+            startTime: session?.startTime || Date.now(),
+            lastPageTime: Date.now(),
+            currentPage: 1,
+          };
+          
+          setAnalyticsSession(newSession);
+          localStorage.setItem(storageKey, JSON.stringify(newSession));
+        }
+      } catch (error) {
+        console.error('Failed to initialize analytics:', error);
+      }
+    };
+
+    if (token) {
+      initAnalytics();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]); // Only run once when token is available
+
+  // Analytics: Track page views
+  useEffect(() => {
+    if (!analyticsSession || viewerState.pageNumber === 0) return;
+
+    const trackPageView = async () => {
+      const now = Date.now();
+      const duration = Math.round((now - analyticsSession.lastPageTime) / 1000);
+
+      // Only track if user spent at least 1 second on the page
+      if (duration > 0 && analyticsSession.currentPage !== viewerState.pageNumber) {
+        try {
+          await fetch('/api/analytics/track', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              token,
+              accessToken,
+              eventType: 'page_view',
+              viewId: analyticsSession.viewId,
+              pageNumber: viewerState.pageNumber,
+              duration,
+              totalPages: viewerState.numPages, // Include total pages for completion calculation
+            }),
+          });
+
+          // Update session
+          const updatedSession = {
+            ...analyticsSession,
+            lastPageTime: now,
+            currentPage: viewerState.pageNumber,
+          };
+          setAnalyticsSession(updatedSession);
+          localStorage.setItem(
+            `analytics_session_${token}`,
+            JSON.stringify(updatedSession)
+          );
+        } catch (error) {
+          console.error('Failed to track page view:', error);
+        }
+      }
+    };
+
+    trackPageView();
+  }, [viewerState.pageNumber, viewerState.numPages, analyticsSession, token, accessToken]);
+
+  // Analytics: Track session end on unmount
+  useEffect(() => {
+    return () => {
+      if (analyticsSession) {
+        const duration = Math.round((Date.now() - analyticsSession.startTime) / 1000);
+        
+        // Use sendBeacon for reliable tracking on page unload
+        const payload = JSON.stringify({
+          token,
+          accessToken,
+          eventType: 'view_end',
+          viewId: analyticsSession.viewId,
+          duration,
+        });
+
+        if (navigator.sendBeacon) {
+          const blob = new Blob([payload], { type: 'application/json' });
+          navigator.sendBeacon('/api/analytics/track', blob);
+        } else {
+          // Fallback for browsers that don't support sendBeacon
+          fetch('/api/analytics/track', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+            keepalive: true,
+          }).catch(err => console.error('Failed to track view end:', err));
+        }
+      }
+    };
+  }, [analyticsSession, token, accessToken]);
 
 
   // Move useMemo hooks to the top level

@@ -7,17 +7,20 @@ A secure, standalone deck viewing platform that integrates with app.raisegate.co
 - 🔐 **Secure Token-Based Access**: Validates shared deck tokens from the main RaiseGate app
 - 📧 **Email Verification**: 6-digit code verification system using Supabase + Resend
 - 📄 **PDF Deck Viewer**: Clean, responsive PDF viewing with navigation controls
-- 💾 **Session Management**: Remembers verification status during the session
+- 📊 **Analytics Dashboard**: Track views, engagement, and viewer behavior (inspired by Papermark)
+- 💾 **Session Management**: Remembers verification status and viewing sessions
 - 🎨 **Modern UI**: Built with shadcn/ui components and Tailwind CSS
 - ⚡ **Fast & Responsive**: Next.js 15 with TypeScript
 
 ## How It Works
 
 1. **Share**: A user from app.raisegate.com shares a deck with an investor's email
-2. **Access**: The investor clicks the shared link (format: `/view/[token]`)
+2. **Access**: The investor clicks the shared link (format: `/view?token=[token]`)
 3. **Verify**: The platform validates their email matches the intended recipient (only required once per 24 hours)
 4. **View**: After verification, the investor can securely view the deck
-5. **Seamless Access**: Additional decks shared with the same email require no re-verification for 24 hours
+5. **Track**: Analytics automatically track viewing sessions, page views, and engagement
+6. **Analyze**: Deck owners can view detailed analytics at `/analytics?token=[token]`
+7. **Seamless Access**: Additional decks shared with the same email require no re-verification for 24 hours
 
 ## Tech Stack
 
@@ -33,20 +36,25 @@ A secure, standalone deck viewing platform that integrates with app.raisegate.co
 src/
 ├── app/
 │   ├── api/                 # API routes
+│   │   ├── analytics/
+│   │   │   ├── track/       # Track viewing events
+│   │   │   └── deck/        # Get deck analytics
 │   │   ├── deck/
 │   │   │   ├── validate/    # Token validation
-│   │   │   └── access/      # Deck access after verification
+│   │   │   ├── view/        # Deck view endpoint
+│   │   │   └── serve/       # Serve PDF files
 │   │   └── verify/
 │   │       ├── request-code/ # Request verification code
 │   │       └── confirm-code/ # Verify code
-│   └── view/
-│       └── [token]/         # Main deck viewer page
+│   ├── analytics/           # Analytics dashboard page
+│   └── view/                # Main deck viewer page
 ├── components/
 │   ├── ui/                  # shadcn/ui components
 │   ├── EmailVerification.tsx
 │   └── PdfViewer.tsx
 ├── lib/
 │   ├── supabase.ts         # Supabase client configuration
+│   ├── jwt.ts              # JWT utilities
 │   └── utils.ts            # Utility functions
 └── types/
     └── database.ts         # TypeScript database types
@@ -73,24 +81,16 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
 
 ### 3. Database Schema
 
-Ensure your Supabase database has the `deck_share_links` table with the following structure:
+Run the SQL migrations in your Supabase dashboard:
 
-```sql
-CREATE TABLE deck_share_links (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  deck_id TEXT NOT NULL,
-  deck_url TEXT NOT NULL,
-  shared_by_user_id UUID NOT NULL,
-  recipient_email TEXT NOT NULL,
-  token TEXT UNIQUE NOT NULL,
-  verification_code TEXT,
-  verification_code_expires TIMESTAMPTZ,
-  is_verified BOOLEAN DEFAULT FALSE,
-  expires_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
+1. **Core Tables**: Set up your base tables (`deck_share_links`, `deck_files`)
+2. **Analytics Tables**: Run the migration from `supabase_analytics_migration.sql`
+
+This will create the analytics tracking tables:
+- `deck_views`: Tracks viewing sessions
+- `page_views`: Tracks individual page views
+
+See `ANALYTICS_SETUP.md` for detailed instructions.
 
 ### 4. Run Development Server
 
@@ -102,19 +102,54 @@ Open [http://localhost:3000](http://localhost:3000) to see the application.
 
 ## API Endpoints
 
-- `POST /api/deck/validate` - Validate a share token
+### Deck Access
+- `POST /api/deck/view` - Get deck information for viewing
+- `GET /api/deck/serve/[token]` - Serve PDF file
+
+### Verification
 - `POST /api/verify/request-code` - Request email verification code
 - `POST /api/verify/confirm-code` - Verify the 6-digit code
-- `POST /api/deck/access` - Get deck URL after successful verification
+- `GET /api/access/requirements` - Get access requirements for a deck
+
+### Analytics
+- `POST /api/analytics/track` - Track viewing events (start, page views, end)
+- `GET /api/analytics/deck` - Get analytics data for a specific deck
+
+## Analytics Feature
+
+The platform includes a comprehensive analytics system inspired by [Papermark](https://github.com/mfts/papermark):
+
+### Tracked Metrics
+- **Total Views**: All-time view count
+- **Unique Viewers**: Distinct viewer count (by email or session)
+- **Average Duration**: Time spent per session
+- **Completion Rate**: % of viewers who completed the deck
+- **Page Engagement**: Most viewed pages
+- **Views Over Time**: Daily view trends
+- **Viewer Details**: Email, location, duration, pages viewed
+
+### Session Continuity
+- Sessions are cached in browser localStorage
+- If a viewer returns within 24 hours, the session resumes
+- No duplicate view counting for returning visitors
+
+### Access Analytics
+To view analytics for a shared deck:
+```
+https://your-domain.com/analytics?token=YOUR_SHARE_LINK_TOKEN
+```
+
+See `ANALYTICS_SETUP.md` for detailed documentation.
 
 ## Integration with RaiseGate
 
 This platform is designed to work alongside the main RaiseGate application:
 
 1. RaiseGate creates share links in the `deck_share_links` table
-2. Share links point to this platform: `https://your-domain.com/view/{token}`
+2. Share links point to this platform: `https://your-domain.com/view?token={token}`
 3. This platform handles the verification and viewing process
-4. Email notifications are sent via Supabase's Resend integration
+4. Analytics automatically track all viewing sessions
+5. Email notifications are sent via Supabase's Resend integration
 
 ## Deployment
 
