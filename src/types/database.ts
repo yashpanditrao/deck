@@ -46,6 +46,7 @@ export interface DeckView {
   viewer_id: string | null; // Session ID for anonymous users
   started_at: string;
   last_active_at: string;
+  ended_at: string | null;
   total_duration: number; // in seconds
   pages_viewed: number[];
   completed: boolean;
@@ -61,7 +62,8 @@ export interface PageView {
   view_id: string;
   page_number: number;
   duration: number; // in seconds
-  viewed_at: string;
+  viewed_at: string; // when the page session started
+  exited_at: string | null; // when the reader left the page
 }
 
 export type DeckViewInsert = Omit<DeckView, 'id'>;

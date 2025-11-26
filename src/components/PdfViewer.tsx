@@ -40,8 +40,8 @@ interface ViewerState {
 interface AnalyticsSession {
   viewId: string;
   startTime: number;
-  lastPageTime: number;
   currentPage: number;
+  pageStartedAt: number;
 }
 
 const MIN_SCALE = 0.5;
@@ -66,6 +66,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
   const [touchEnd, setTouchEnd] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [analyticsSession, setAnalyticsSession] = useState<AnalyticsSession | null>(null);
+  const storageKey = useMemo(() => `analytics_session_${token}`, [token]);
 
   // Calculate max scale based on device type
   const maxScale = isMobile ? MAX_SCALE_MOBILE : MAX_SCALE_DESKTOP;
@@ -236,7 +237,6 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
     const initAnalytics = async () => {
       try {
         // Check if there's an existing session in localStorage
-        const storageKey = `analytics_session_${token}`;
         const storedSession = localStorage.getItem(storageKey);
         
         let session: AnalyticsSession | null = null;
@@ -271,8 +271,8 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
           const newSession: AnalyticsSession = {
             viewId: result.viewId,
             startTime: session?.startTime || Date.now(),
-            lastPageTime: Date.now(),
             currentPage: 1,
+            pageStartedAt: Date.now(),
           };
           
           setAnalyticsSession(newSession);
@@ -287,7 +287,7 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
       initAnalytics();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]); // Only run once when token is available
+  }, [token, storageKey]); // Only run once when token is available
 
   // Analytics: Track page views
   useEffect(() => {
@@ -295,10 +295,20 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
 
     const trackPageView = async () => {
       const now = Date.now();
-      const duration = Math.round((now - analyticsSession.lastPageTime) / 1000);
+      const durationSeconds = Math.max(0, Math.round((now - analyticsSession.pageStartedAt) / 1000));
 
-      // Only track if user spent at least 1 second on the page
-      if (duration > 0 && analyticsSession.currentPage !== viewerState.pageNumber) {
+      if (analyticsSession.currentPage !== viewerState.pageNumber) {
+        const previousPage = analyticsSession.currentPage;
+        const pageStartedAt = analyticsSession.pageStartedAt;
+        const updatedSession: AnalyticsSession = {
+          ...analyticsSession,
+          currentPage: viewerState.pageNumber,
+          pageStartedAt: now,
+        };
+
+        setAnalyticsSession(updatedSession);
+        localStorage.setItem(storageKey, JSON.stringify(updatedSession));
+
         try {
           await fetch('/api/analytics/track', {
             method: 'POST',
@@ -308,23 +318,13 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
               accessToken,
               eventType: 'page_view',
               viewId: analyticsSession.viewId,
-              pageNumber: viewerState.pageNumber,
-              duration,
-              totalPages: viewerState.numPages, // Include total pages for completion calculation
+              pageNumber: previousPage,
+              duration: durationSeconds,
+              totalPages: viewerState.numPages,
+              pageStartedAt: new Date(pageStartedAt).toISOString(),
+              pageEndedAt: new Date(now).toISOString(),
             }),
           });
-
-          // Update session
-          const updatedSession = {
-            ...analyticsSession,
-            lastPageTime: now,
-            currentPage: viewerState.pageNumber,
-          };
-          setAnalyticsSession(updatedSession);
-          localStorage.setItem(
-            `analytics_session_${token}`,
-            JSON.stringify(updatedSession)
-          );
         } catch (error) {
           console.error('Failed to track page view:', error);
         }
@@ -332,38 +332,61 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
     };
 
     trackPageView();
-  }, [viewerState.pageNumber, viewerState.numPages, analyticsSession, token, accessToken]);
+  }, [viewerState.pageNumber, viewerState.numPages, analyticsSession, token, accessToken, storageKey]);
 
   // Analytics: Track session end on unmount
   useEffect(() => {
     return () => {
-      if (analyticsSession) {
-        const duration = Math.round((Date.now() - analyticsSession.startTime) / 1000);
-        
-        // Use sendBeacon for reliable tracking on page unload
-        const payload = JSON.stringify({
-          token,
-          accessToken,
-          eventType: 'view_end',
-          viewId: analyticsSession.viewId,
-          duration,
-        });
+      if (!analyticsSession) return;
 
-        if (navigator.sendBeacon) {
-          const blob = new Blob([payload], { type: 'application/json' });
-          navigator.sendBeacon('/api/analytics/track', blob);
-        } else {
-          // Fallback for browsers that don't support sendBeacon
-          fetch('/api/analytics/track', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: payload,
-            keepalive: true,
-          }).catch(err => console.error('Failed to track view end:', err));
-        }
+      const now = Date.now();
+      const currentPageDuration = Math.max(0, Math.round((now - analyticsSession.pageStartedAt) / 1000));
+      const currentPagePayload = JSON.stringify({
+        token,
+        accessToken,
+        eventType: 'page_view',
+        viewId: analyticsSession.viewId,
+        pageNumber: analyticsSession.currentPage,
+        duration: currentPageDuration,
+        totalPages: viewerState.numPages,
+        pageStartedAt: new Date(analyticsSession.pageStartedAt).toISOString(),
+        pageEndedAt: new Date(now).toISOString(),
+      });
+
+      const totalDuration = Math.max(0, Math.round((now - analyticsSession.startTime) / 1000));
+      const viewEndPayload = JSON.stringify({
+        token,
+        accessToken,
+        eventType: 'view_end',
+        viewId: analyticsSession.viewId,
+        duration: totalDuration,
+      });
+
+      if (navigator.sendBeacon) {
+        const pageBlob = new Blob([currentPagePayload], { type: 'application/json' });
+        navigator.sendBeacon('/api/analytics/track', pageBlob);
+
+        const viewBlob = new Blob([viewEndPayload], { type: 'application/json' });
+        navigator.sendBeacon('/api/analytics/track', viewBlob);
+      } else {
+        fetch('/api/analytics/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: currentPagePayload,
+          keepalive: true,
+        }).catch(err => console.error('Failed to track final page view:', err));
+
+        fetch('/api/analytics/track', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: viewEndPayload,
+          keepalive: true,
+        }).catch(err => console.error('Failed to track view end:', err));
       }
+
+      localStorage.removeItem(storageKey);
     };
-  }, [analyticsSession, token, accessToken]);
+  }, [analyticsSession, token, accessToken, viewerState.numPages, storageKey]);
 
 
   // Move useMemo hooks to the top level

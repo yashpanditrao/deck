@@ -10,12 +10,24 @@ interface TrackEventPayload {
   pageNumber?: number;
   duration?: number;
   totalPages?: number; // Total pages in the deck
+  pageStartedAt?: string;
+  pageEndedAt?: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const payload: TrackEventPayload = await request.json();
-    const { token, accessToken, eventType, viewId, pageNumber, duration } = payload;
+    const {
+      token,
+      accessToken,
+      eventType,
+      viewId,
+      pageNumber,
+      duration,
+      totalPages,
+      pageStartedAt,
+      pageEndedAt,
+    } = payload;
 
     if (!token || !eventType) {
       return NextResponse.json(
@@ -118,6 +130,7 @@ export async function POST(request: NextRequest) {
               .from('deck_views')
               .update({
                 last_active_at: new Date().toISOString(),
+                ended_at: null,
               })
               .eq('id', viewId);
 
@@ -152,6 +165,7 @@ export async function POST(request: NextRequest) {
               .from('deck_views')
               .update({
                 last_active_at: new Date().toISOString(),
+                ended_at: null,
               })
               .eq('id', recentSession.id);
 
@@ -175,6 +189,7 @@ export async function POST(request: NextRequest) {
             viewer_id: viewId || `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             started_at: new Date().toISOString(),
             last_active_at: new Date().toISOString(),
+            ended_at: null,
             total_duration: 0,
             pages_viewed: [],
             completed: false,
@@ -231,7 +246,13 @@ export async function POST(request: NextRequest) {
         }
 
         // Update total pages if provided
-        const deckTotalPages = payload.totalPages || currentView.total_pages || 0;
+        const deckTotalPages = totalPages || currentView.total_pages || 0;
+
+        const normalizedDuration = Math.max(duration || 0, 0);
+        const now = new Date();
+        const nowIso = now.toISOString();
+        const pageStartedIso = pageStartedAt || new Date(now.getTime() - normalizedDuration * 1000).toISOString();
+        const pageEndedIso = pageEndedAt || nowIso;
 
         // Check if this view should be marked as completed
         // Mark as completed if they've viewed at least 80% of pages OR reached the last page
@@ -248,8 +269,8 @@ export async function POST(request: NextRequest) {
           .from('deck_views')
           .update({
             pages_viewed: pagesViewed,
-            total_duration: (currentView.total_duration || 0) + (duration || 0),
-            last_active_at: new Date().toISOString(),
+            total_duration: (currentView.total_duration || 0) + normalizedDuration,
+            last_active_at: pageEndedIso,
             completed: isCompleted,
             total_pages: deckTotalPages, // Store total pages
           })
@@ -269,8 +290,9 @@ export async function POST(request: NextRequest) {
           .insert({
             view_id: viewId,
             page_number: pageNumber,
-            duration: duration || 0,
-            viewed_at: new Date().toISOString(),
+            duration: normalizedDuration,
+            viewed_at: pageStartedIso,
+            exited_at: pageEndedIso,
           });
 
         if (pageViewError) {
@@ -289,13 +311,17 @@ export async function POST(request: NextRequest) {
           );
         }
 
+        const sessionEndedAt = new Date().toISOString();
+        const totalDuration = Math.max(duration || 0, 0);
+
         // Mark view as completed and update final duration
         const { error: updateError } = await supabaseAdmin
           .from('deck_views')
           .update({
             completed: true,
-            total_duration: (duration || 0),
-            last_active_at: new Date().toISOString(),
+            total_duration: totalDuration,
+            last_active_at: sessionEndedAt,
+            ended_at: sessionEndedAt,
           })
           .eq('id', viewId);
 
@@ -324,4 +350,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

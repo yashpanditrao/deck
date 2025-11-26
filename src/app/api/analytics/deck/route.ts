@@ -47,6 +47,9 @@ export async function GET(request: NextRequest) {
 
     const viewList: DeckView[] = (views ?? []) as DeckView[];
 
+    const getLocationLabel = (view: DeckView) =>
+      view.city && view.country ? `${view.city}, ${view.country}` : view.country || 'Unknown';
+
     // Get page views for all views
     const viewIds = viewList.map((v) => v.id);
     let pageViews: PageView[] = [];
@@ -104,6 +107,90 @@ export async function GET(request: NextRequest) {
       pageEngagement[pv.page_number] = (pageEngagement[pv.page_number] || 0) + 1;
     });
 
+    // Location distribution
+    const locationCounts = new Map<string, number>();
+    viewList.forEach(view => {
+      const label = getLocationLabel(view);
+      locationCounts.set(label, (locationCounts.get(label) || 0) + 1);
+    });
+
+    const locationStats = Array.from(locationCounts.entries())
+      .map(([location, count]) => ({
+        location,
+        count,
+        percentage: totalViews > 0 ? Math.round((count / totalViews) * 100) : 0,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    // Viewer-level aggregation
+    const viewerStatsMap = new Map<string, {
+      viewerKey: string;
+      viewer: string;
+      sessions: number;
+      totalDuration: number;
+      completedSessions: number;
+      lastViewedAt: string;
+      location: string;
+    }>();
+
+    viewList.forEach(view => {
+      const key = view.viewer_email || view.viewer_id || view.id;
+      const displayName = view.viewer_email || 'Anonymous';
+      const existing = viewerStatsMap.get(key);
+
+      if (!existing) {
+        viewerStatsMap.set(key, {
+          viewerKey: key,
+          viewer: displayName,
+          sessions: 0,
+          totalDuration: 0,
+          completedSessions: 0,
+          lastViewedAt: view.last_active_at,
+          location: getLocationLabel(view),
+        });
+      }
+
+      const stats = viewerStatsMap.get(key)!;
+      stats.sessions += 1;
+      stats.totalDuration += view.total_duration || 0;
+      stats.completedSessions += view.completed ? 1 : 0;
+      if (!stats.lastViewedAt || new Date(view.last_active_at).getTime() > new Date(stats.lastViewedAt).getTime()) {
+        stats.lastViewedAt = view.last_active_at;
+        stats.location = getLocationLabel(view);
+      }
+    });
+
+    const viewerDetails = Array.from(viewerStatsMap.values())
+      .map(stats => ({
+        viewerKey: stats.viewerKey,
+        viewer: stats.viewer,
+        sessions: stats.sessions,
+        totalDuration: stats.totalDuration,
+        avgSessionDuration: stats.sessions > 0 ? Math.round(stats.totalDuration / stats.sessions) : 0,
+        completionRate: stats.sessions > 0 ? Math.round((stats.completedSessions / stats.sessions) * 100) : 0,
+        lastViewedAt: stats.lastViewedAt,
+        location: stats.location,
+      }))
+      .sort((a, b) => new Date(b.lastViewedAt).getTime() - new Date(a.lastViewedAt).getTime());
+
+    // Page timing aggregation
+    const pageTimingMap = new Map<number, { page: number; totalDuration: number; views: number }>();
+    pageViews.forEach(pv => {
+      const existing = pageTimingMap.get(pv.page_number) || { page: pv.page_number, totalDuration: 0, views: 0 };
+      existing.totalDuration += pv.duration || 0;
+      existing.views += 1;
+      pageTimingMap.set(pv.page_number, existing);
+    });
+
+    const pageTiming = Array.from(pageTimingMap.values())
+      .map(entry => ({
+        page: entry.page,
+        totalDuration: entry.totalDuration,
+        avgDuration: entry.views > 0 ? Math.round(entry.totalDuration / entry.views) : 0,
+        views: entry.views,
+      }))
+      .sort((a, b) => a.page - b.page);
+
     // Recent viewers
     const recentViewers = viewList.slice(0, 10).map(v => ({
       id: v.id,
@@ -112,7 +199,7 @@ export async function GET(request: NextRequest) {
       duration: v.total_duration,
       pagesViewed: v.pages_viewed?.length || 0,
       completed: v.completed,
-      location: v.city && v.country ? `${v.city}, ${v.country}` : v.country || 'Unknown',
+      location: getLocationLabel(v),
     })) || [];
 
     // Views over time (grouped by day)
@@ -131,7 +218,7 @@ export async function GET(request: NextRequest) {
       pagesViewed: v.pages_viewed || [],
       completed: v.completed,
       userAgent: v.user_agent,
-      location: v.city && v.country ? `${v.city}, ${v.country}` : v.country || 'Unknown',
+      location: getLocationLabel(v),
     }));
 
     const analytics = {
@@ -151,6 +238,9 @@ export async function GET(request: NextRequest) {
         count,
       })).sort((a, b) => a.date.localeCompare(b.date)),
       allViews,
+      viewerDetails,
+      pageTiming,
+      locationStats,
     };
 
     return NextResponse.json(analytics);
@@ -162,4 +252,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-
