@@ -382,7 +382,6 @@ const PDFViewer = React.memo<PDFViewerProps>(({ pdfLink, isDownloadable, token, 
 
     // Typical pitch deck aspect ratio is 16:9 (landscape)
     const deckAspectRatio = 16 / 9;
-    const containerAspectRatio = containerWidth / containerHeight;
 
     if (isFullscreen) {
       // In fullscreen, calculate width that fits both dimensions

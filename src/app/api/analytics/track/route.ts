@@ -55,15 +55,50 @@ export async function POST(request: NextRequest) {
     // Get user agent and IP for analytics
     const userAgent = request.headers.get('user-agent') || null;
     const forwardedFor = request.headers.get('x-forwarded-for');
-    let ipAddress = forwardedFor ? forwardedFor.split(',')[0] : 
-                    request.headers.get('x-real-ip') || null;
+    const ipAddress = forwardedFor ? forwardedFor.split(',')[0] : 
+                      request.headers.get('x-real-ip') || null;
     
-    // In development (localhost), the IP will be ::1 or 127.0.0.1
-    // This is expected behavior and will show real IPs in production
-    // For development testing, you could use a service to get the public IP:
-    // if (ipAddress === '::1' || ipAddress === '127.0.0.1') {
-    //   ipAddress = 'dev-localhost';
-    // }
+    // Get geolocation from IP address
+    async function getGeolocation(ip: string | null): Promise<{ country: string | null; city: string | null }> {
+      // First try Vercel's geo headers (free on Vercel)
+      const vercelCountry = request.headers.get('x-vercel-ip-country');
+      const vercelCity = request.headers.get('x-vercel-ip-city');
+      
+      if (vercelCountry) {
+        return {
+          country: vercelCountry,
+          city: vercelCity,
+        };
+      }
+      
+      // Fallback: Use ipapi.co (free, 30k requests/month, no API key needed)
+      if (!ip || ip === '::1' || ip === '127.0.0.1' || ip === 'localhost') {
+        return { country: null, city: null };
+      }
+      
+      try {
+        const response = await fetch(`https://ipapi.co/${ip}/json/`, {
+          headers: { 'User-Agent': 'deck-analytics/1.0' },
+          signal: AbortSignal.timeout(3000), // 3 second timeout
+        });
+        
+        if (!response.ok) {
+          return { country: null, city: null };
+        }
+        
+        const data = await response.json();
+        
+        return {
+          country: data.country_name || null,
+          city: data.city || null,
+        };
+      } catch (error) {
+        console.error('Geolocation lookup failed:', error);
+        return { country: null, city: null };
+      }
+    }
+    
+    const { country, city } = await getGeolocation(ipAddress);
 
     // Handle different event types
     switch (eventType) {
@@ -146,8 +181,8 @@ export async function POST(request: NextRequest) {
             total_pages: 0, // Will be updated on first page view
             user_agent: userAgent,
             ip_address: ipAddress,
-            country: null, // Can be enhanced with geolocation service
-            city: null,
+            country: country,
+            city: city,
           })
           .select()
           .single();

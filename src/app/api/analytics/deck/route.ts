@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
-import type { DeckShareLink, DeckView } from '@/types/database';
-
-interface AnalyticsQuery {
-  token: string;
-}
+import type { DeckShareLink, DeckView, PageView } from '@/types/database';
 
 export async function GET(request: NextRequest) {
   try {
@@ -53,7 +49,7 @@ export async function GET(request: NextRequest) {
 
     // Get page views for all views
     const viewIds = viewList.map((v) => v.id);
-    let pageViews: any[] = [];
+    let pageViews: PageView[] = [];
     
     if (viewIds.length > 0) {
       const { data: pv, error: pageViewsError } = await supabaseAdmin
