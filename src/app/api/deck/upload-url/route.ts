@@ -99,9 +99,12 @@ export async function POST(request: Request) {
       fileName.split(".").pop()?.toLowerCase() ||
       mimeFallbackExtension(fileType);
     const timestamp = Date.now();
+    const baseName =
+      sanitizeStorageIdentifier(fileName.replace(/\.[^.]+$/, "")) ||
+      `deck_${timestamp}`;
     const generatedName =
       type === "deck"
-        ? `${sanitizedEmail}_Deck_${timestamp}.${fileExt}`
+        ? `${baseName}_${timestamp}.${fileExt}`
         : `${sanitizedEmail}_Deck_thumbnail_${timestamp}.${fileExt}`;
     const bucket = STORAGE_BUCKETS[type];
     const storagePath =

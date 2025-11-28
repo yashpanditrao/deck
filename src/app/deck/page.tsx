@@ -111,6 +111,7 @@ export default function DeckPage() {
   const [loading, setLoading] = useState(true);
   const [decks, setDecks] = useState<DeckFile[]>([]);
   const [shareLinks, setShareLinks] = useState<DeckShareLink[]>([]);
+  const [shareDeckFilter, setShareDeckFilter] = useState("");
   const [analyticsToken, setAnalyticsToken] = useState<string>("");
   const [analyticsData, setAnalyticsData] =
     useState<DeckAnalyticsResponse | null>(null);
@@ -125,6 +126,13 @@ export default function DeckPage() {
   const [shareLoading, setShareLoading] = useState(false);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
   const [appOrigin, setAppOrigin] = useState("");
+  const [recentShareLink, setRecentShareLink] = useState<{
+    token: string;
+    url: string;
+    deckId: string;
+  } | null>(null);
+  const [copyHintVisible, setCopyHintVisible] = useState(false);
+  const copyHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [linkForm, setLinkForm] = useState({
     accessLevel: "restricted",
     expirationDays: "30",
@@ -139,6 +147,44 @@ export default function DeckPage() {
     if (typeof window !== "undefined") {
       setAppOrigin(window.location.origin);
     }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (copyHintTimeoutRef.current) {
+        clearTimeout(copyHintTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const buildShareUrl = useCallback(
+    (token: string) => {
+      if (!token) return "";
+      const origin =
+        appOrigin ||
+        (typeof window !== "undefined" ? window.location.origin : "");
+      return origin ? `${origin}/view?token=${token}` : "";
+    },
+    [appOrigin],
+  );
+
+  const hideCopyHint = useCallback(() => {
+    if (copyHintTimeoutRef.current) {
+      clearTimeout(copyHintTimeoutRef.current);
+      copyHintTimeoutRef.current = null;
+    }
+    setCopyHintVisible(false);
+  }, []);
+
+  const triggerCopyHint = useCallback(() => {
+    if (copyHintTimeoutRef.current) {
+      clearTimeout(copyHintTimeoutRef.current);
+    }
+    setCopyHintVisible(true);
+    copyHintTimeoutRef.current = setTimeout(() => {
+      setCopyHintVisible(false);
+      copyHintTimeoutRef.current = null;
+    }, 8000);
   }, []);
 
   useEffect(() => {
@@ -175,10 +221,18 @@ export default function DeckPage() {
   }, [router]);
 
   const getDeckName = useCallback((filePath: string) => {
+    if (!filePath) return "Untitled Deck";
     const fileName = filePath.split("/").pop() || "";
-    return (
-      fileName.replace(/_\d+\.pdf$/i, "").replace(/_/g, " ") || "Untitled Deck"
-    );
+    const withoutExtension = fileName.replace(/\.[^.]+$/, "");
+    const withoutTimestamp = withoutExtension.replace(/_\d{6,}$/, "");
+    const cleaned = withoutTimestamp
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!cleaned) {
+      return "Untitled Deck";
+    }
+    return cleaned.replace(/\b\w/g, (char) => char.toUpperCase());
   }, []);
 
   const formatDate = useCallback((dateString: string) => {
@@ -267,8 +321,12 @@ export default function DeckPage() {
   useEffect(() => {
     if (!user) return;
     loadDecks();
-    loadShareLinks();
-  }, [user, loadDecks, loadShareLinks]);
+  }, [user, loadDecks]);
+
+  useEffect(() => {
+    if (!user) return;
+    loadShareLinks(shareDeckFilter || undefined);
+  }, [user, shareDeckFilter, loadShareLinks]);
 
   const uploadDeckFile = async (file: File) => {
     if (file.type !== "application/pdf") {
@@ -384,7 +442,7 @@ export default function DeckPage() {
       if (response.ok) {
         toast.success("Deck deleted successfully");
         await loadDecks();
-        await loadShareLinks();
+        await loadShareLinks(shareDeckFilter || undefined);
       } else {
         toast.error(data.error || "Failed to delete deck");
       }
@@ -476,7 +534,21 @@ export default function DeckPage() {
 
       if (response.ok) {
         toast.success("Share link created");
-        await loadShareLinks(selectedDeckId);
+        const token = data?.shareLink?.token as string | undefined;
+        const resolvedShareUrl =
+          (data?.share_url as string | undefined) ||
+          (token ? buildShareUrl(token) : "");
+
+        if (token && resolvedShareUrl) {
+          setRecentShareLink({
+            token,
+            url: resolvedShareUrl,
+            deckId: selectedDeckId,
+          });
+          triggerCopyHint();
+        }
+
+        await loadShareLinks(shareDeckFilter || undefined);
         setLinkForm((prev) => ({
           ...prev,
           allowedDomains: "",
@@ -494,16 +566,34 @@ export default function DeckPage() {
     }
   };
 
-  const handleCopyLink = async (token: string) => {
+  const copyShareLink = async (url: string) => {
+    if (!url) {
+      toast.error("Unable to copy link");
+      return;
+    }
     try {
-      const shareUrl = appOrigin
-        ? `${appOrigin}/view?token=${token}`
-        : `${window.location.origin}/view?token=${token}`;
-      await navigator.clipboard.writeText(shareUrl);
+      await navigator.clipboard.writeText(url);
       toast.success("Link copied to clipboard");
     } catch {
       toast.error("Failed to copy link");
     }
+  };
+
+  const handleCopyLink = async (token: string) => {
+    await copyShareLink(buildShareUrl(token));
+  };
+
+  const handleCopyLatestLink = async () => {
+    if (!recentShareLink?.url) {
+      toast.error("No link ready to copy yet");
+      return;
+    }
+    await copyShareLink(recentShareLink.url);
+    hideCopyHint();
+  };
+
+  const handleShareFilterChange = (deckId: string) => {
+    setShareDeckFilter(deckId);
   };
 
   const handleRevokeLink = async (token: string) => {
@@ -516,7 +606,7 @@ export default function DeckPage() {
 
       if (response.ok) {
         toast.success("Share link revoked");
-        await loadShareLinks(selectedDeckId);
+        await loadShareLinks(shareDeckFilter || undefined);
       } else {
         toast.error(data.error || "Failed to revoke share link");
       }
@@ -538,6 +628,11 @@ export default function DeckPage() {
     decks.forEach((deck) => map.set(deck.id, getDeckName(deck.file_path)));
     return map;
   }, [decks, getDeckName]);
+
+  const selectedDeck = useMemo(
+    () => decks.find((deck) => deck.id === selectedDeckId) || null,
+    [decks, selectedDeckId],
+  );
 
   const stats = useMemo(() => {
     const latestDeck = decks[0];
@@ -717,6 +812,85 @@ export default function DeckPage() {
                 </select>
               </div>
 
+              {selectedDeck ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+                  {renaming === selectedDeck.id ? (
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <Input
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        className="bg-slate-900 border-slate-700 text-slate-100"
+                        placeholder="Enter new name"
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          className="bg-white text-slate-900 hover:bg-slate-200"
+                          onClick={() => handleRename(selectedDeck.id)}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-slate-700 text-slate-200"
+                          onClick={() => {
+                            setRenaming(null);
+                            setRenameValue("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-semibold">
+                          {getDeckName(selectedDeck.file_path)}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          Uploaded {formatDate(selectedDeck.uploaded_at)}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-slate-200 hover:bg-slate-900/60"
+                          onClick={() => {
+                            setRenameValue(getDeckName(selectedDeck.file_path));
+                            setRenaming(selectedDeck.id);
+                          }}
+                        >
+                          <PenSquare className="w-4 h-4 mr-1" />
+                          Rename
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-rose-400 hover:bg-rose-500/10"
+                          onClick={() => handleDelete(selectedDeck.id)}
+                          disabled={deleting === selectedDeck.id}
+                        >
+                          {deleting === selectedDeck.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4 mr-1" />
+                          )}
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Upload a deck to unlock sharing controls.
+                </p>
+              )}
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="text-sm text-slate-300 flex flex-col gap-2">
                   <label htmlFor="accessLevel">Access level</label>
@@ -811,37 +985,81 @@ export default function DeckPage() {
                 Allow download access
               </label>
 
-              <Button
-                className="w-full gap-2 bg-white text-slate-900 hover:bg-slate-200"
-                onClick={handleGenerateLink}
-                disabled={creatingLink}
-              >
-                {creatingLink ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Generating
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4" />
-                    Generate secure link
-                  </>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button
+                  className="w-full gap-2 bg-white text-slate-900 hover:bg-slate-200"
+                  onClick={handleGenerateLink}
+                  disabled={creatingLink}
+                >
+                  {creatingLink ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      Generate secure link
+                    </>
+                  )}
+                </Button>
+                {recentShareLink && copyHintVisible && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full gap-2 border-slate-700 text-slate-200 hover:bg-slate-800/70 sm:w-auto"
+                    onClick={handleCopyLatestLink}
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy latest link
+                  </Button>
                 )}
-              </Button>
+              </div>
+              {recentShareLink && copyHintVisible && (
+                <p className="text-xs text-slate-400">
+                  Latest link ready for{" "}
+                  {deckNameMap.get(recentShareLink.deckId) || "your deck"}.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>
 
         <div className="grid gap-8 lg:grid-cols-2">
-          <Card className="bg-slate-900/70 border-slate-800">
+          <Card className="bg-slate-900/70 border-slate-800 lg:col-span-2">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Link2 className="w-5 h-5 text-slate-200" />
-                Active Share Links
-              </CardTitle>
-              <CardDescription>
-                Rotate, revoke, or copy trackable links
-              </CardDescription>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Link2 className="w-5 h-5 text-slate-200" />
+                    Active Share Links
+                  </CardTitle>
+                  <CardDescription>
+                    Rotate, revoke, or copy trackable links
+                  </CardDescription>
+                </div>
+                <div className="text-sm text-slate-300 flex flex-col gap-1">
+                  <label
+                    htmlFor="shareDeckFilter"
+                    className="text-xs uppercase tracking-wide text-slate-400"
+                  >
+                    Filter by deck
+                  </label>
+                  <select
+                    id="shareDeckFilter"
+                    value={shareDeckFilter}
+                    onChange={(e) => handleShareFilterChange(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-slate-100"
+                  >
+                    <option value="">All decks</option>
+                    {decks.map((deck) => (
+                      <option key={deck.id} value={deck.id}>
+                        {getDeckName(deck.file_path)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {shareLoading ? (
@@ -850,7 +1068,9 @@ export default function DeckPage() {
                 </div>
               ) : shareLinks.length === 0 ? (
                 <div className="border border-dashed border-slate-700 rounded-2xl p-8 text-center text-slate-400">
-                  No share links yet. Generate one to get started.
+                  {shareDeckFilter
+                    ? "No share links for this deck yet."
+                    : "No share links yet. Generate one to get started."}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -920,121 +1140,6 @@ export default function DeckPage() {
                     </div>
                   ))}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-900/70 border-slate-800">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <PenSquare className="w-5 h-5 text-slate-200" />
-                Deck Library
-              </CardTitle>
-              <CardDescription>
-                Rename, delete, or spotlight decks for linking
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {decks.length === 0 ? (
-                <div className="border border-dashed border-slate-700 rounded-2xl p-8 text-center text-slate-400">
-                  You haven&apos;t uploaded a deck yet.
-                </div>
-              ) : (
-                decks.map((deck) => (
-                  <div
-                    key={deck.id}
-                    className={`rounded-2xl border ${
-                      selectedDeckId === deck.id
-                        ? "border-slate-200 bg-slate-200/10"
-                        : "border-slate-800 bg-slate-900/50"
-                    } p-4`}
-                  >
-                    <div className="flex flex-wrap items-start gap-4 justify-between">
-                      <div>
-                        {renaming === deck.id ? (
-                          <div className="flex flex-wrap gap-2">
-                            <Input
-                              value={renameValue}
-                              onChange={(e) => setRenameValue(e.target.value)}
-                              className="bg-slate-900 border-slate-700 text-slate-100"
-                              placeholder="Enter new name"
-                              autoFocus
-                            />
-                            <Button
-                              size="sm"
-                              onClick={() => handleRename(deck.id)}
-                              className="bg-white text-slate-900 hover:bg-slate-200"
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-slate-700 text-slate-200"
-                              onClick={() => {
-                                setRenaming(null);
-                                setRenameValue("");
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        ) : (
-                          <div>
-                            <p className="text-lg font-semibold">
-                              {getDeckName(deck.file_path)}
-                            </p>
-                            <p className="text-xs text-slate-400">
-                              Uploaded {formatDate(deck.uploaded_at)}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-slate-700 text-slate-200"
-                          onClick={() => {
-                            setSelectedDeckId(deck.id);
-                            toast.success("Deck selected for sharing");
-                          }}
-                        >
-                          <Share2 className="w-4 h-4 mr-1" />
-                          Use for link
-                        </Button>
-                        {renaming !== deck.id && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-slate-200 hover:bg-slate-800"
-                              onClick={() => {
-                                setRenameValue(getDeckName(deck.file_path));
-                                setRenaming(deck.id);
-                              }}
-                            >
-                              <PenSquare className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-rose-400 hover:bg-rose-500/10"
-                              onClick={() => handleDelete(deck.id)}
-                              disabled={deleting === deck.id}
-                            >
-                              {deleting === deck.id ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-4 h-4" />
-                              )}
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
               )}
             </CardContent>
           </Card>
