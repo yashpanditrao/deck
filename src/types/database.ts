@@ -17,7 +17,7 @@ export interface DeckShareLink {
   require_verification?: boolean;
 
   // For backward compatibility
-  access_level?: 'public' | 'restricted' | 'whitelisted';
+  access_level?: "public" | "restricted" | "whitelisted";
 }
 
 export interface DeckFile {
@@ -28,7 +28,7 @@ export interface DeckFile {
   thumbnail_path: string;
 }
 
-export type DeckFileInsert = Omit<DeckFile, 'id' | 'uploaded_at'>;
+export type DeckFileInsert = Omit<DeckFile, "id" | "uploaded_at">;
 export type DeckFileUpdate = Partial<DeckFileInsert>;
 
 export interface VerificationSession {
@@ -66,23 +66,23 @@ export interface PageView {
   exited_at: string | null; // when the reader left the page
 }
 
-export type DeckViewInsert = Omit<DeckView, 'id'>;
-export type PageViewInsert = Omit<PageView, 'id'>;
+export type DeckViewInsert = Omit<DeckView, "id">;
+export type PageViewInsert = Omit<PageView, "id">;
 
 export interface Database {
   public: {
     Tables: {
       deck_share_links: {
         Row: DeckShareLink;
-        Insert: Omit<DeckShareLink, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<DeckShareLink, 'id'>> & {
+        Insert: Omit<DeckShareLink, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<DeckShareLink, "id">> & {
           updated_at?: string;
         };
       };
       deck_files: {
         Row: DeckFile;
-        Insert: Omit<DeckFile, 'id' | 'uploaded_at'>;
-        Update: Partial<Omit<DeckFile, 'id'>> & {
+        Insert: Omit<DeckFile, "id" | "uploaded_at">;
+        Update: Partial<Omit<DeckFile, "id">> & {
           uploaded_at?: string;
         };
       };
@@ -95,6 +95,41 @@ export interface Database {
         Row: PageView;
         Insert: PageViewInsert;
         Update: Partial<PageViewInsert>;
+      };
+      users: {
+        Row: {
+          id: string;
+          username: string | null;
+          deck_id: string | null;
+          name: string | null;
+          email: string | null;
+        };
+        Insert: {
+          id: string;
+          username?: string | null;
+          deck_id?: string | null;
+          name?: string | null;
+          email?: string | null;
+        };
+        Update: Partial<{
+          username: string | null;
+          deck_id: string | null;
+          name: string | null;
+          email: string | null;
+        }>;
+      };
+      note_dev: {
+        Row: {
+          id: string;
+          note: string | null;
+        };
+        Insert: {
+          id: string;
+          note?: string | null;
+        };
+        Update: Partial<{
+          note: string | null;
+        }>;
       };
     };
   };
