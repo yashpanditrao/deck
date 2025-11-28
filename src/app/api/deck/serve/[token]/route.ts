@@ -128,13 +128,14 @@ export async function GET(
       await cachePDF(filePath, buffer)
     }
 
-    // Serve PDF inline with browser caching enabled
+    // Serve PDF inline with aggressive browser caching
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'inline; filename="document.pdf"',
-        // Enable browser caching for 1 hour for faster subsequent loads
-        'Cache-Control': 'private, max-age=3600, stale-while-revalidate=86400',
+        // Aggressive browser caching: 7 days, with stale-while-revalidate for 30 days
+        'Cache-Control': 'private, max-age=604800, stale-while-revalidate=2592000, immutable',
+        'ETag': `"${filePath}-${buffer.length}"`,
         'X-Content-Type-Options': 'nosniff',
         'X-Cache-Status': buffer ? 'HIT' : 'MISS'
       }

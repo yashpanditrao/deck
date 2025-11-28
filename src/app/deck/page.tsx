@@ -56,6 +56,7 @@ interface DeckShareLink {
   id: string;
   deck_id: string;
   token: string;
+  link_identifier: string | null;
   access_level: "public" | "restricted" | "whitelisted";
   recipient_email: string | null;
   allowed_emails: string[] | null;
@@ -133,6 +134,9 @@ export default function DeckPage() {
   } | null>(null);
   const [copyHintVisible, setCopyHintVisible] = useState(false);
   const copyHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [editingIdentifier, setEditingIdentifier] = useState<string | null>(null);
+  const [identifierValue, setIdentifierValue] = useState("");
+  const [updatingIdentifier, setUpdatingIdentifier] = useState<string | null>(null);
   const [linkForm, setLinkForm] = useState({
     accessLevel: "restricted",
     expirationDays: "30",
@@ -158,12 +162,19 @@ export default function DeckPage() {
   }, []);
 
   const buildShareUrl = useCallback(
-    (token: string) => {
+    (token: string, identifier: string | null = null) => {
       if (!token) return "";
       const origin =
         appOrigin ||
         (typeof window !== "undefined" ? window.location.origin : "");
-      return origin ? `${origin}/view?token=${token}` : "";
+      if (!origin) return "";
+      
+      // Use format: /[identifier]/view?token=[token] when identifier is available
+      // Fallback to /view?token=[token] when identifier is not available
+      if (identifier) {
+        return `${origin}/${encodeURIComponent(identifier)}/view?token=${token}`;
+      }
+      return `${origin}/view?token=${token}`;
     },
     [appOrigin],
   );
@@ -540,9 +551,11 @@ export default function DeckPage() {
           (token ? buildShareUrl(token) : "");
 
         if (token && resolvedShareUrl) {
+          const identifier = data?.shareLink?.link_identifier || null;
+          const fullUrl = buildShareUrl(token, identifier);
           setRecentShareLink({
             token,
-            url: resolvedShareUrl,
+            url: fullUrl || resolvedShareUrl,
             deckId: selectedDeckId,
           });
           triggerCopyHint();
@@ -579,8 +592,43 @@ export default function DeckPage() {
     }
   };
 
-  const handleCopyLink = async (token: string) => {
-    await copyShareLink(buildShareUrl(token));
+  const handleCopyLink = async (token: string, identifier: string | null = null) => {
+    await copyShareLink(buildShareUrl(token, identifier));
+  };
+
+  const handleUpdateIdentifier = async (token: string) => {
+    if (!identifierValue.trim()) {
+      toast.error("Identifier cannot be empty");
+      return;
+    }
+
+    setUpdatingIdentifier(token);
+    try {
+      const response = await fetch("/api/deck/share/update-identifier", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          identifier: identifierValue.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast.success("Link identifier updated");
+        setEditingIdentifier(null);
+        setIdentifierValue("");
+        await loadShareLinks(shareDeckFilter || undefined);
+      } else {
+        toast.error(data.error || "Failed to update identifier");
+      }
+    } catch (error) {
+      console.error("Update identifier error:", error);
+      toast.error("Failed to update identifier");
+    } finally {
+      setUpdatingIdentifier(null);
+    }
   };
 
   const handleCopyLatestLink = async () => {
@@ -1099,44 +1147,100 @@ export default function DeckPage() {
                           {link.is_downloadable ? "Downloadable" : "View only"}
                         </span>
                       </div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-slate-700 text-slate-200 hover:bg-slate-800"
-                          onClick={() => handleViewAnalytics(link.token)}
-                        >
-                          {analyticsToken === link.token && analyticsLoading ? (
-                            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                          ) : (
-                            <BarChart3 className="w-4 h-4 mr-2" />
+                      {editingIdentifier === link.token ? (
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                          <Input
+                            value={identifierValue}
+                            onChange={(e) => setIdentifierValue(e.target.value)}
+                            className="bg-slate-900 border-slate-700 text-slate-100"
+                            placeholder="Link identifier (e.g., username)"
+                            autoFocus
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              className="bg-white text-slate-900 hover:bg-slate-200"
+                              onClick={() => handleUpdateIdentifier(link.token)}
+                              disabled={updatingIdentifier === link.token}
+                            >
+                              {updatingIdentifier === link.token ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                "Save"
+                              )}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-slate-700 text-slate-200"
+                              onClick={() => {
+                                setEditingIdentifier(null);
+                                setIdentifierValue("");
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          {link.link_identifier && (
+                            <div className="text-xs text-slate-400 mb-2">
+                              Link: <span className="font-mono text-slate-300">{link.link_identifier}</span>
+                            </div>
                           )}
-                          Analytics
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="border-slate-700 text-slate-200 hover:bg-slate-800"
-                          onClick={() => handleCopyLink(link.token)}
-                        >
-                          <Copy className="w-4 h-4 mr-2" />
-                          Copy Link
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-rose-400 hover:bg-rose-500/10"
-                          onClick={() => handleRevokeLink(link.token)}
-                          disabled={revokingToken === link.token}
-                        >
-                          {revokingToken === link.token ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-4 h-4" />
-                          )}
-                          <span className="ml-2">Revoke</span>
-                        </Button>
-                      </div>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-slate-700 text-slate-200 hover:bg-slate-800"
+                              onClick={() => handleViewAnalytics(link.token)}
+                            >
+                              {analyticsToken === link.token && analyticsLoading ? (
+                                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                              ) : (
+                                <BarChart3 className="w-4 h-4 mr-2" />
+                              )}
+                              Analytics
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-slate-700 text-slate-200 hover:bg-slate-800"
+                              onClick={() => {
+                                setIdentifierValue(link.link_identifier || "");
+                                setEditingIdentifier(link.token);
+                              }}
+                            >
+                              <PenSquare className="w-4 h-4 mr-2" />
+                              Edit Identifier
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-slate-700 text-slate-200 hover:bg-slate-800"
+                              onClick={() => handleCopyLink(link.token, link.link_identifier)}
+                            >
+                              <Copy className="w-4 h-4 mr-2" />
+                              Copy Link
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-rose-400 hover:bg-rose-500/10"
+                              onClick={() => handleRevokeLink(link.token)}
+                              disabled={revokingToken === link.token}
+                            >
+                              {revokingToken === link.token ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
+                              <span className="ml-2">Revoke</span>
+                            </Button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>

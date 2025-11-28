@@ -333,6 +333,14 @@ export async function POST(request: NextRequest) {
           );
         }
 
+        // Trigger cleanup of old sessions (non-blocking, runs in background)
+        // Only run cleanup occasionally to avoid overhead (10% of the time)
+        if (Math.random() < 0.1) {
+          import('@/lib/session-cleanup')
+            .then(({ cleanupAnalyticsSessions }) => cleanupAnalyticsSessions())
+            .catch((err) => console.error('Background cleanup error:', err));
+        }
+
         return NextResponse.json({ success: true });
       }
 

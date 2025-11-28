@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, Suspense, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,10 +24,12 @@ interface ShareLinkData {
   is_downloadable: boolean
 }
 
-const ViewDeckContent = () => {
+const ViewDeckContentWithIdentifier = () => {
+  const params = useParams()
   const searchParams = useSearchParams()
+  // Identifier is just for convenience in the URL - we ignore it and use token only
+  const identifier = params?.identifier as string
   const token = searchParams.get('token')
-  const identifier = searchParams.get('identifier') // Get identifier from query param if present
 
   const [shareData, setShareData] = useState<ShareLinkData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -39,7 +41,10 @@ const ViewDeckContent = () => {
   // Check for existing verification on initial load
   useEffect(() => {
     const checkAccess = async () => {
-      if (!token) return;
+      if (!token) {
+        setError('Invalid link: token is required');
+        return;
+      }
 
       try {
         // 1. Check access requirements
@@ -186,7 +191,7 @@ const ViewDeckContent = () => {
   );
 };
 
-export default function ViewDeckPage() {
+export default function ViewDeckPageWithIdentifier() {
   return (
     <Suspense fallback={
       <div className="fixed inset-0 bg-black flex items-center justify-center">
@@ -196,7 +201,8 @@ export default function ViewDeckPage() {
         </div>
       </div>
     }>
-      <ViewDeckContent />
+      <ViewDeckContentWithIdentifier />
     </Suspense>
   );
 }
+

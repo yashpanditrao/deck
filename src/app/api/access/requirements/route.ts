@@ -73,7 +73,8 @@ export async function GET(request: Request) {
       isDownloadable: shareLink.is_downloadable,
       expiresAt: shareLink.expires_at,
       deckId: shareLink.deck_id,
-      userId: shareLink.user_id
+      userId: shareLink.user_id,
+      link_identifier: shareLink.link_identifier
     });
 
   } catch (error) {

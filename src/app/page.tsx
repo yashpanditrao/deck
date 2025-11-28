@@ -44,7 +44,7 @@ export default function Home() {
             <CardContent className="p-5 sm:p-6 space-y-6">
               <div className="space-y-5">
                 <div className="flex items-start gap-3.5 group">
-                  <div className="mt-0.5 bg-[#771144]/10 p-2 rounded-lg group-hover:bg-[#771144] group-hover:text-white transition-colors duration-300 shrink-0">
+                  <div className="mt-0.5 bg-[#771144]/10 p-2 rounded-lg group-hover:bg-[#771144] group-hover:text-white transition-colors duration-200 shrink-0">
                     <Mail className="w-4 h-4 text-[#771144] group-hover:text-white transition-colors" />
                   </div>
                   <div className="space-y-0.5">
@@ -56,7 +56,7 @@ export default function Home() {
                 </div>
 
                 <div className="flex items-start gap-3.5 group">
-                  <div className="mt-0.5 bg-[#771144]/10 p-2 rounded-lg group-hover:bg-[#771144] group-hover:text-white transition-colors duration-300 shrink-0">
+                  <div className="mt-0.5 bg-[#771144]/10 p-2 rounded-lg group-hover:bg-[#771144] group-hover:text-white transition-colors duration-200 shrink-0">
                     <Eye className="w-4 h-4 text-[#771144] group-hover:text-white transition-colors" />
                   </div>
                   <div className="space-y-0.5">

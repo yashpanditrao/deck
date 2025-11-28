@@ -5,6 +5,7 @@ export interface DeckShareLink {
   shared_by_user_id: string;
   recipient_email: string;
   token: string;
+  link_identifier: string | null; // Username or custom identifier for URL convenience
   expires_at: string | null;
   created_at: string;
   updated_at: string;

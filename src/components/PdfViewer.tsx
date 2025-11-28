@@ -70,12 +70,24 @@ const PDFViewer = React.memo<PDFViewerProps>(
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [analyticsSession, setAnalyticsSession] =
       useState<AnalyticsSession | null>(null);
+    const [loadedPages, setLoadedPages] = useState<Set<number>>(new Set());
+    const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set());
     const storageKey = useMemo(() => `analytics_session_${token}`, [token]);
+    
+    // Calculate which 3 pages to render (prev, current, next)
+    const pagesToRender = useMemo(() => {
+      if (viewerState.numPages === 0) return [];
+      const current = viewerState.pageNumber;
+      const pages: number[] = [current];
+      if (current > 1) pages.unshift(current - 1);
+      if (current < viewerState.numPages) pages.push(current + 1);
+      return pages;
+    }, [viewerState.pageNumber, viewerState.numPages]);
 
     // Calculate max scale based on device type
     const maxScale = isMobile ? MAX_SCALE_MOBILE : MAX_SCALE_DESKTOP;
 
-    // Navigation handlers
+    // Navigation handlers - always instant
     const previousPage = useCallback(() => {
       setViewerState((prev) => ({
         ...prev,
@@ -162,9 +174,42 @@ const PDFViewer = React.memo<PDFViewerProps>(
         setViewerState((prev) => ({ ...prev, numPages, pageNumber: 1 }));
         setIsLoading(false);
         setError(null);
+        // Mark first page as loaded
+        setLoadedPages(new Set([1]));
+        // Preload page 2 if it exists
+        if (numPages > 1) {
+          setLoadedPages((prev) => new Set([...prev, 2]));
+        }
       },
       [],
     );
+    
+    // Preload adjacent pages when current page changes
+    useEffect(() => {
+      if (viewerState.numPages === 0) return;
+      
+      const current = viewerState.pageNumber;
+      const pagesToPreload: number[] = [];
+      
+      // Preload next page
+      if (current < viewerState.numPages && !loadedPages.has(current + 1)) {
+        pagesToPreload.push(current + 1);
+      }
+      // Preload previous page
+      if (current > 1 && !loadedPages.has(current - 1)) {
+        pagesToPreload.push(current - 1);
+      }
+      
+      if (pagesToPreload.length > 0) {
+        setLoadedPages((prev) => new Set([...prev, ...pagesToPreload]));
+      }
+    }, [viewerState.pageNumber, viewerState.numPages, loadedPages]);
+
+    // Track when pages are fully rendered
+    const onPageRenderSuccess = useCallback((pageNumber: number) => {
+      setRenderedPages((prev) => new Set([...prev, pageNumber]));
+      setLoadedPages((prev) => new Set([...prev, pageNumber]));
+    }, []);
 
     const onDocumentLoadError = useCallback((error: Error) => {
       console.error("PDF load error:", error);
@@ -351,7 +396,7 @@ const PDFViewer = React.memo<PDFViewerProps>(
       storageKey,
     ]);
 
-    // Analytics: Track session end on unmount
+    // Analytics: Track session end on unmount and cleanup
     useEffect(() => {
       return () => {
         if (!analyticsSession) return;
@@ -413,7 +458,12 @@ const PDFViewer = React.memo<PDFViewerProps>(
           }).catch((err) => console.error("Failed to track view end:", err));
         }
 
+        // Cleanup: Remove session from localStorage
         localStorage.removeItem(storageKey);
+        
+        // Cleanup: Remove access token if it exists (optional, tokens expire via JWT)
+        const accessTokenKey = `access_token_${token}`;
+        localStorage.removeItem(accessTokenKey);
       };
     }, [
       analyticsSession,
@@ -461,7 +511,7 @@ const PDFViewer = React.memo<PDFViewerProps>(
 
     if (!pdfUrl) {
       return (
-        <div className="fixed inset-0 bg-gray-900 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black flex items-center justify-center">
           <div className="text-center text-white">
             <div className="w-16 h-16 mx-auto mb-4 opacity-50">📄</div>
             <p className="text-xl">No document available</p>
@@ -472,7 +522,7 @@ const PDFViewer = React.memo<PDFViewerProps>(
 
     if (error) {
       return (
-        <div className="fixed inset-0 bg-gray-900 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black flex items-center justify-center">
           <div className="text-center text-white max-w-md">
             <div className="text-red-400 text-6xl mb-4">⚠️</div>
             <h2 className="text-xl font-semibold mb-2">
@@ -546,7 +596,7 @@ const PDFViewer = React.memo<PDFViewerProps>(
 
         {/* Main PDF Container */}
         <div
-          className={`absolute inset-0 ${isMobile ? "top-16" : "top-0"} flex items-center justify-center overflow-hidden`}
+          className={`absolute inset-0 ${isMobile ? "top-16" : "top-0"} flex items-center justify-center overflow-hidden bg-black`}
           ref={setContainerRef}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
@@ -579,18 +629,38 @@ const PDFViewer = React.memo<PDFViewerProps>(
               </div>
             }
           >
-            <Page
-              pageNumber={viewerState.pageNumber}
-              width={calculatePageWidth}
-              scale={viewerState.scale}
-              renderTextLayer={false}
-              renderAnnotationLayer
-              loading={
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            {/* Render 3 pages simultaneously (prev, current, next) in a stack */}
+            {pagesToRender.map((pageNum) => {
+              const isCurrentPage = pageNum === viewerState.pageNumber;
+              
+              return (
+                <div
+                  key={pageNum}
+                  className="absolute inset-0 flex items-center justify-center"
+                  style={{
+                    opacity: isCurrentPage ? 1 : 0,
+                    zIndex: isCurrentPage ? 10 : 0,
+                    pointerEvents: isCurrentPage ? 'auto' : 'none',
+                  }}
+                >
+                  <Page
+                    pageNumber={pageNum}
+                    width={calculatePageWidth}
+                    scale={viewerState.scale}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={isCurrentPage}
+                    onRenderSuccess={() => onPageRenderSuccess(pageNum)}
+                    loading={
+                      isCurrentPage ? (
+                        <div className="flex items-center justify-center h-full bg-black">
+                          <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                        </div>
+                      ) : null
+                    }
+                  />
                 </div>
-              }
-            />
+              );
+            })}
           </Document>
         </div>
 

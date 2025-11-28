@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, Suspense, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,22 +24,24 @@ interface ShareLinkData {
   is_downloadable: boolean
 }
 
-const ViewDeckContent = () => {
-  const searchParams = useSearchParams()
-  const token = searchParams.get('token')
-  const identifier = searchParams.get('identifier') // Get identifier from query param if present
+const ViewDeckContentWithIdentifier = () => {
+  const params = useParams()
+  // Identifier is just for convenience in the URL - we ignore it and use token only
+  const token = params?.token as string
 
   const [shareData, setShareData] = useState<ShareLinkData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState('verification');
   const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [linkIdentifier, setLinkIdentifier] = useState<string | null>(identifier || null);
 
   // Check for existing verification on initial load
   useEffect(() => {
     const checkAccess = async () => {
-      if (!token) return;
+      if (!token) {
+        setError('Invalid link: token is required');
+        return;
+      }
 
       try {
         // 1. Check access requirements
@@ -49,11 +51,6 @@ const ViewDeckContent = () => {
         if (!reqResponse.ok) {
           setError(requirements.error || 'Failed to load access requirements');
           return;
-        }
-
-        // Store identifier from API if not already set
-        if (!linkIdentifier && requirements.link_identifier) {
-          setLinkIdentifier(requirements.link_identifier);
         }
 
         // 2. Handle Public Access
@@ -72,11 +69,8 @@ const ViewDeckContent = () => {
           setStep('viewing');
           loadDeckData(token, storedAccessToken);
         } else {
-          // No access token, redirect to verify page with identifier if available
-          const verifyUrl = linkIdentifier || requirements.link_identifier
-            ? `/verify?token=${token}&identifier=${encodeURIComponent(linkIdentifier || requirements.link_identifier)}`
-            : `/verify?token=${token}`;
-          window.location.href = verifyUrl;
+          // No access token, redirect to verify page
+          window.location.href = `/verify?token=${token}`;
         }
 
       } catch {
@@ -177,16 +171,20 @@ const ViewDeckContent = () => {
   }
 
   return (
-    <div className="fixed inset-0 bg-black flex items-center justify-center">
-      <div className="flex flex-col items-center space-y-4 text-white">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-        <span className="text-gray-300">Please wait while we verify your access...</span>
-      </div>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Loading...</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p>Please wait while we verify your access...</p>
+        </CardContent>
+      </Card>
     </div>
   );
 };
 
-export default function ViewDeckPage() {
+export default function ViewDeckPageWithIdentifier() {
   return (
     <Suspense fallback={
       <div className="fixed inset-0 bg-black flex items-center justify-center">
@@ -196,7 +194,8 @@ export default function ViewDeckPage() {
         </div>
       </div>
     }>
-      <ViewDeckContent />
+      <ViewDeckContentWithIdentifier />
     </Suspense>
   );
 }
+

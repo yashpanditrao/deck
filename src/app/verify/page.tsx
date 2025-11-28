@@ -11,6 +11,7 @@ function VerifyContent() {
     const searchParams = useSearchParams()
     const router = useRouter()
     const token = searchParams.get('token')
+    const identifier = searchParams.get('identifier') // Get identifier from query param if present
 
     const [step, setStep] = useState<'email' | 'otp'>('email')
     const [email, setEmail] = useState('')
@@ -19,8 +20,10 @@ function VerifyContent() {
     const [error, setError] = useState('')
     const [successMessage, setSuccessMessage] = useState('')
     const [checkingAccess, setCheckingAccess] = useState(true)
+    const [linkIdentifier, setLinkIdentifier] = useState<string | null>(identifier || null)
 
     // Check if this is a public link - if so, redirect to view
+    // Also fetch the identifier if not already provided
     useEffect(() => {
         const checkAccessLevel = async () => {
             if (!token) {
@@ -33,9 +36,17 @@ function VerifyContent() {
                 const response = await fetch(`/api/access/requirements?token=${token}`)
                 const data = await response.json()
 
+                // If identifier not in URL, try to get it from the response
+                if (!linkIdentifier && data.link_identifier) {
+                    setLinkIdentifier(data.link_identifier)
+                }
+
                 if (response.ok && data.accessLevel === 'public') {
-                    // Public link - redirect to view page directly
-                    router.push(`/view?token=${token}`)
+                    // Public link - redirect to view page with identifier if available
+                    const viewUrl = linkIdentifier || data.link_identifier
+                        ? `/${linkIdentifier || data.link_identifier}/view?token=${token}`
+                        : `/view?token=${token}`
+                    router.push(viewUrl)
                     return
                 }
 
@@ -48,7 +59,7 @@ function VerifyContent() {
         }
 
         checkAccessLevel()
-    }, [token, router])
+    }, [token, router, linkIdentifier])
 
     const handleRequestCode = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -101,8 +112,11 @@ function VerifyContent() {
                 localStorage.setItem(`access_token_${token}`, data.accessToken)
                 localStorage.setItem('last_verified_email', email)
 
-                // Redirect to view
-                router.push(`/view?token=${token}`)
+                // Redirect to view with identifier if available
+                const viewUrl = linkIdentifier
+                    ? `/${linkIdentifier}/view?token=${token}`
+                    : `/view?token=${token}`
+                router.push(viewUrl)
             } else {
                 setError(data.error || 'Invalid verification code')
             }

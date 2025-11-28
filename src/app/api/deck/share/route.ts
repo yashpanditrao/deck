@@ -10,12 +10,23 @@ const VALID_ACCESS_LEVELS = ["public", "restricted", "whitelisted"] as const;
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const buildShareUrl = (token: string) => {
+const sanitizeIdentifier = (value: string) => {
+  // Only allow alphanumeric, hyphens, and underscores
+  return value.toLowerCase().replace(/[^a-z0-9_-]/g, '').trim();
+};
+
+const buildShareUrl = (token: string, identifier: string | null = null) => {
   const base =
     process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "";
 
   if (!base) return null;
   const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
+  
+  // Use format: /[identifier]/view?token=[token] when identifier is available
+  // Fallback to /view?token=[token] when identifier is not available
+  if (identifier) {
+    return `${normalizedBase}/${encodeURIComponent(identifier)}/view?token=${token}`;
+  }
   return `${normalizedBase}/view?token=${token}`;
 };
 
@@ -140,6 +151,12 @@ export async function POST(request: Request) {
     expiresAt.setDate(expiresAt.getDate() + selectedDays);
 
     const token = generateShareToken();
+    
+    // Default link_identifier to username, sanitized
+    const linkIdentifier = deckUser.username 
+      ? sanitizeIdentifier(deckUser.username)
+      : null;
+    
     const allowedEmails =
       access_level === "whitelisted" &&
       Array.isArray(allowed_emails) &&
@@ -158,6 +175,7 @@ export async function POST(request: Request) {
       deck_id: deckRecord.id,
       user_id: deckUser.id,
       token,
+      link_identifier: linkIdentifier,
       access_level,
       allowed_emails: access_level === "whitelisted" ? allowedEmails : null,
       allowed_domains: access_level === "whitelisted" ? allowedDomains : null,
@@ -189,7 +207,7 @@ export async function POST(request: Request) {
       success: true,
       message: `Share link created and valid for ${selectedDays} days`,
       shareLink,
-      share_url: buildShareUrl(token),
+      share_url: buildShareUrl(token, linkIdentifier),
     });
   } catch (error) {
     console.error("Error in share POST:", error);
