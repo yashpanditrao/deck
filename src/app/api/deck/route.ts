@@ -7,6 +7,7 @@ import {
   sanitizeStorageIdentifier,
   STORAGE_BUCKETS,
 } from "@/app/api/deck/helpers";
+import { requestDeckThumbnail } from "@/lib/thumbnail-service";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -154,6 +155,28 @@ export async function POST(request: Request) {
         );
       }
 
+      let thumbnailPath = newDeckFileData.thumbnail_path ?? null;
+
+      try {
+        const thumbnailResponse = await requestDeckThumbnail(storagePath, {
+          regenerate: false,
+        });
+
+        if (thumbnailResponse?.thumbnail_path) {
+          thumbnailPath = thumbnailResponse.thumbnail_path || thumbnailPath;
+        } else {
+          const { data: refreshedDeckFile } = await supabaseAdmin
+            .from("deck_files")
+            .select("thumbnail_path")
+            .eq("id", newDeckFileData.id)
+            .maybeSingle();
+
+          thumbnailPath = refreshedDeckFile?.thumbnail_path ?? thumbnailPath;
+        }
+      } catch (thumbnailError) {
+        console.error("Thumbnail generation failed:", thumbnailError);
+      }
+
       const { data: signedUrlData, error: signedUrlError } =
         await supabaseAdmin.storage
           .from(STORAGE_BUCKETS.deck)
@@ -174,7 +197,7 @@ export async function POST(request: Request) {
           user_id: deckUser.id,
           file_path: storagePath,
           uploaded_at: newDeckFileData.uploaded_at || new Date().toISOString(),
-          thumbnail_path: newDeckFileData.thumbnail_path,
+          thumbnail_path: thumbnailPath,
         },
       });
     }
