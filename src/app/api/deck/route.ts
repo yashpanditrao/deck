@@ -1,33 +1,15 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { createClient } from "@/utils/supabase/server";
 import { NextResponse } from "next/server";
-import { getOrCreateDeckUser, type DeckUserProfile } from "@/lib/deck-user";
+import { getOrCreateDeckUser } from "@/lib/deck-user";
+import {
+  resolveFolderPath,
+  sanitizeStorageIdentifier,
+  STORAGE_BUCKETS,
+} from "@/app/api/deck/helpers";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-const MAX_FILE_SIZE = {
-  deck: 20 * 1024 * 1024, // 20MB
-  thumbnail: 5 * 1024 * 1024, // 5MB
-};
-
-const ALLOWED_FILE_TYPES = {
-  deck: ["application/pdf"],
-  thumbnail: ["image/jpeg", "image/png", "image/webp"],
-};
-
-const sanitizeFolderSegment = (value: string) =>
-  value.replace(/[^a-zA-Z0-9_\-]/g, "_").trim() ||
-  `deck_${Date.now().toString(36)}`;
-
-const resolveFolderPath = (
-  deckUser: DeckUserProfile,
-  fallbackEmail: string | null,
-  fallbackId: string,
-) => {
-  const preferred = deckUser.username || fallbackEmail || fallbackId;
-  return sanitizeFolderSegment(preferred ?? fallbackId);
-};
 
 export async function GET(request: Request) {
   try {
@@ -106,248 +88,202 @@ export async function POST(request: Request) {
     }
 
     const deckUser = await getOrCreateDeckUser(user);
-
-    // Get form data
-    const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const type = formData.get("type") as "deck" | "thumbnail";
-
-    // Validate required fields
-    if (!file || !type) {
+    let payload: { type?: "deck" | "thumbnail"; storagePath?: string } | null =
+      null;
+    try {
+      payload = await request.json();
+    } catch {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "Invalid request body" },
         { status: 400 },
       );
     }
 
-    if (!ALLOWED_FILE_TYPES[type]?.includes(file.type)) {
+    const type = payload?.type;
+    const storagePath = payload?.storagePath;
+
+    if (type !== "deck" && type !== "thumbnail") {
       return NextResponse.json(
-        {
-          error: `Invalid file type. Allowed types: ${ALLOWED_FILE_TYPES[type].join(", ")}`,
-        },
+        { error: "Invalid upload type" },
         { status: 400 },
       );
     }
 
-    if (file.size > MAX_FILE_SIZE[type]) {
+    if (!storagePath || typeof storagePath !== "string") {
       return NextResponse.json(
-        {
-          error: `File too large. Maximum size: ${MAX_FILE_SIZE[type] / (1024 * 1024)}MB`,
-        },
+        { error: "Missing storage path" },
         { status: 400 },
       );
     }
 
-    // Get user email for folder structure
     const userEmail = deckUser.email || user.email || null;
-    const sanitizedEmail = (userEmail || user.id).replace(/[^a-zA-Z0-9]/g, "_");
+    const sanitizedEmail = sanitizeStorageIdentifier(userEmail || user.id);
     const folderPath = resolveFolderPath(deckUser, userEmail, user.id);
-    const fileExt = file.name.split(".").pop();
-    const fileName =
-      type === "deck"
-        ? `${sanitizedEmail}_Deck_${Date.now()}.${fileExt}`
-        : `${sanitizedEmail}_Deck_thumbnail_${Date.now()}.${fileExt}`;
-    const fullPath = `${folderPath}/${fileName}`;
 
     if (type === "deck") {
-      // Upload deck file to storage
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from("deck")
-        .upload(fullPath, file);
-
-      if (uploadError) {
-        console.error("Deck storage upload error:", uploadError);
+      if (!storagePath.startsWith(`${folderPath}/`)) {
         return NextResponse.json(
-          {
-            error: "DECK_UPLOAD_FAILED",
-            message: "Failed to upload deck file",
-            details: uploadError.message || "Unknown error",
-          },
-          { status: 500 },
+          { error: "Invalid storage path for deck" },
+          { status: 400 },
         );
       }
 
-      console.log("Deck file uploaded to storage:", fullPath);
-
-      // Create new deck_files record
       const { data: newDeckFileData, error: deckFileError } =
         await supabaseAdmin
           .from("deck_files")
           .insert({
             user_id: deckUser.id,
-            file_path: fullPath,
+            file_path: storagePath,
             thumbnail_path: null,
           })
           .select()
           .single();
 
-      if (deckFileError) {
+      if (deckFileError || !newDeckFileData) {
+        await supabaseAdmin.storage
+          .from(STORAGE_BUCKETS.deck)
+          .remove([storagePath]);
         console.error("Deck file insert error:", deckFileError);
-        // Rollback: delete uploaded file
-        await supabaseAdmin.storage.from("deck").remove([fullPath]);
         return NextResponse.json(
           {
             error: "DECK_FILE_RECORD_FAILED",
             message: "Failed to create deck file record",
-            details: deckFileError.message || "Unknown error",
+            details: deckFileError?.message || "Unknown error",
           },
           { status: 500 },
         );
       }
 
-      console.log("Successfully created deck_files record:", newDeckFileData);
-
-      // Generate signed URL
       const { data: signedUrlData, error: signedUrlError } =
         await supabaseAdmin.storage
-          .from("deck")
-          .createSignedUrl(fullPath, 604800);
+          .from(STORAGE_BUCKETS.deck)
+          .createSignedUrl(storagePath, 604800);
 
-      if (signedUrlError || !signedUrlData) {
+      if (signedUrlError || !signedUrlData?.signedUrl) {
         return NextResponse.json(
           { error: "Failed to generate signed URL" },
           { status: 500 },
         );
       }
 
-      console.log("Deck upload successful, returning deck data");
       return NextResponse.json({
         success: true,
         url: signedUrlData.signedUrl,
         deckFile: {
           id: newDeckFileData.id,
           user_id: deckUser.id,
-          file_path: fullPath,
+          file_path: storagePath,
           uploaded_at: newDeckFileData.uploaded_at || new Date().toISOString(),
           thumbnail_path: newDeckFileData.thumbnail_path,
         },
       });
-    } else {
-      // Handle thumbnail upload
-      // Get the latest deck for this user
-      const { data: latestDeck, error: deckFetchError } = await supabaseAdmin
-        .from("deck_files")
-        .select("id")
-        .eq("user_id", deckUser.id)
-        .order("uploaded_at", { ascending: false })
-        .limit(1)
-        .single();
+    }
 
-      let targetDeckId: string | null = null;
-      let createdDeckFileId: string | null = null;
+    if (storagePath.includes("/") || !storagePath.startsWith(sanitizedEmail)) {
+      return NextResponse.json(
+        { error: "Invalid storage path for thumbnail" },
+        { status: 400 },
+      );
+    }
 
-      if (!latestDeck || deckFetchError) {
-        // Create a minimal deck_files record just for the thumbnail
-        const { data: thumbnailDeckFile, error: createError } =
-          await supabaseAdmin
-            .from("deck_files")
-            .insert({
-              user_id: deckUser.id,
-              file_path: null,
-              thumbnail_path: null,
-            })
-            .select()
-            .single();
+    const { data: latestDeck, error: deckFetchError } = await supabaseAdmin
+      .from("deck_files")
+      .select("id")
+      .eq("user_id", deckUser.id)
+      .order("uploaded_at", { ascending: false })
+      .limit(1)
+      .single();
 
-        if (createError) {
-          return NextResponse.json(
-            {
-              error: "THUMBNAIL_RECORD_FAILED",
-              message: "Failed to create thumbnail record",
-            },
-            { status: 500 },
-          );
-        }
+    let targetDeckId: string | null = null;
+    let createdDeckFileId: string | null = null;
 
-        targetDeckId = thumbnailDeckFile.id;
-        createdDeckFileId = thumbnailDeckFile.id;
-      } else {
-        targetDeckId = latestDeck.id;
-      }
+    if (!latestDeck || deckFetchError) {
+      const { data: thumbnailDeckFile, error: createError } =
+        await supabaseAdmin
+          .from("deck_files")
+          .insert({
+            user_id: deckUser.id,
+            file_path: null,
+            thumbnail_path: null,
+          })
+          .select()
+          .single();
 
-      // Get existing thumbnail path to delete old file
-      const { data: existingDeckFiles } = await supabaseAdmin
-        .from("deck_files")
-        .select("thumbnail_path")
-        .eq("id", targetDeckId)
-        .single();
-
-      const oldThumbnailPath = existingDeckFiles?.thumbnail_path;
-
-      // Upload thumbnail file (flat storage, no folders)
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from("deckthumbnail")
-        .upload(fileName, file);
-
-      if (uploadError) {
-        // Rollback: delete created deck_files record if we created one
-        if (createdDeckFileId) {
-          await supabaseAdmin
-            .from("deck_files")
-            .delete()
-            .eq("id", createdDeckFileId);
-        }
-        return NextResponse.json(
-          { error: "Failed to upload thumbnail" },
-          { status: 500 },
-        );
-      }
-
-      // Get public URL for thumbnail
-      const { data: publicUrlData } = supabaseAdmin.storage
-        .from("deckthumbnail")
-        .getPublicUrl(fileName);
-
-      // Update deck_files record with thumbnail path
-      const { error: updateError } = await supabaseAdmin
-        .from("deck_files")
-        .update({
-          thumbnail_path: publicUrlData.publicUrl,
-        })
-        .eq("id", targetDeckId);
-
-      if (updateError) {
-        // Rollback: delete uploaded thumbnail and created records
-        await supabaseAdmin.storage.from("deckthumbnail").remove([fileName]);
-        if (createdDeckFileId) {
-          await supabaseAdmin
-            .from("deck_files")
-            .delete()
-            .eq("id", targetDeckId);
-        }
+      if (createError) {
         return NextResponse.json(
           {
-            error: "DECK_FILE_UPDATE_FAILED",
-            message: "Failed to update deck file with thumbnail",
+            error: "THUMBNAIL_RECORD_FAILED",
+            message: "Failed to create thumbnail record",
           },
           { status: 500 },
         );
       }
 
-      // Delete old thumbnail only after successful update
-      if (oldThumbnailPath) {
-        const oldThumbnailFileName = oldThumbnailPath.split("/").pop();
-        if (oldThumbnailFileName) {
-          await supabaseAdmin.storage
-            .from("deckthumbnail")
-            .remove([oldThumbnailFileName]);
-        }
+      targetDeckId = thumbnailDeckFile.id;
+      createdDeckFileId = thumbnailDeckFile.id;
+    } else {
+      targetDeckId = latestDeck.id;
+    }
+
+    const { data: existingDeckFiles } = await supabaseAdmin
+      .from("deck_files")
+      .select("thumbnail_path")
+      .eq("id", targetDeckId)
+      .single();
+
+    const oldThumbnailPath = existingDeckFiles?.thumbnail_path;
+
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from(STORAGE_BUCKETS.thumbnail)
+      .getPublicUrl(storagePath);
+
+    const newThumbnailUrl = publicUrlData.publicUrl;
+
+    const { error: updateError } = await supabaseAdmin
+      .from("deck_files")
+      .update({
+        thumbnail_path: newThumbnailUrl,
+      })
+      .eq("id", targetDeckId);
+
+    if (updateError) {
+      await supabaseAdmin.storage
+        .from(STORAGE_BUCKETS.thumbnail)
+        .remove([storagePath]);
+
+      if (createdDeckFileId) {
+        await supabaseAdmin.from("deck_files").delete().eq("id", targetDeckId);
       }
 
-      // Fetch the updated deck_files record
-      const { data: updatedDeckFiles } = await supabaseAdmin
-        .from("deck_files")
-        .select("*")
-        .eq("id", targetDeckId)
-        .single();
-
-      console.log("Thumbnail upload successful");
-      return NextResponse.json({
-        success: true,
-        url: publicUrlData.publicUrl,
-        deckFile: updatedDeckFiles,
-      });
+      return NextResponse.json(
+        {
+          error: "DECK_FILE_UPDATE_FAILED",
+          message: "Failed to update deck file with thumbnail",
+        },
+        { status: 500 },
+      );
     }
+
+    if (oldThumbnailPath) {
+      const oldThumbnailFileName = oldThumbnailPath.split("/").pop();
+      if (oldThumbnailFileName) {
+        await supabaseAdmin.storage
+          .from(STORAGE_BUCKETS.thumbnail)
+          .remove([oldThumbnailFileName]);
+      }
+    }
+
+    const { data: updatedDeckFiles } = await supabaseAdmin
+      .from("deck_files")
+      .select("*")
+      .eq("id", targetDeckId)
+      .single();
+
+    return NextResponse.json({
+      success: true,
+      url: newThumbnailUrl,
+      deckFile: updatedDeckFiles,
+    });
   } catch (error: any) {
     console.error("Critical error in deck POST:", error);
     return NextResponse.json(

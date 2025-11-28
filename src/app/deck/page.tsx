@@ -283,22 +283,60 @@ export default function DeckPage() {
 
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("type", "deck");
-
-      const response = await fetch("/api/deck", {
+      const prepareResponse = await fetch("/api/deck/upload-url", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "deck",
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+        }),
       });
 
-      const data = await response.json();
+      const prepareData = await prepareResponse.json();
 
-      if (response.ok) {
+      if (!prepareResponse.ok) {
+        toast.error(prepareData.error || "Failed to prepare upload");
+        return;
+      }
+
+      const { signedUrl, storagePath } = prepareData as {
+        signedUrl?: string;
+        storagePath?: string;
+      };
+
+      if (!signedUrl || !storagePath) {
+        toast.error("Invalid upload URL response");
+        return;
+      }
+
+      const uploadResponse = await fetch(signedUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": file.type,
+        },
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        toast.error("Failed to upload deck to storage");
+        return;
+      }
+
+      const finalizeResponse = await fetch("/api/deck", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "deck", storagePath }),
+      });
+
+      const finalizeData = await finalizeResponse.json();
+
+      if (finalizeResponse.ok) {
         toast.success("Deck uploaded successfully!");
         await loadDecks();
       } else {
-        toast.error(data.error || "Failed to upload deck");
+        toast.error(finalizeData.error || "Failed to finalize deck upload");
       }
     } catch (error) {
       console.error("Upload error:", error);
