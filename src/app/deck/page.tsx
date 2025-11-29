@@ -24,6 +24,7 @@ import {
   Sparkles,
   Shield,
   Clock4,
+  LineChart,
   Share2,
   Eye,
   BarChart3,
@@ -108,7 +109,6 @@ const ACCESS_LEVEL_LABELS: Record<DeckShareLink["access_level"], string> = {
 const EXPIRATION_OPTIONS = ["7", "30", "90", "180", "365"];
 const ANALYTICS_ACCENT = "#771144";
 const ANALYTICS_ACCENT_RGB = "119,17,68";
-const ANALYTICS_ACCENT_LIGHT = "#f7d3e6";
 
 export default function DeckPage() {
   const router = useRouter();
@@ -158,6 +158,47 @@ export default function DeckPage() {
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const shareLinkBase = appOrigin || "your-domain.com";
+  const viewsChartData = useMemo(() => {
+    if (!analyticsData) return [];
+    const totalViews = analyticsData.summary.totalViews || 0;
+    const uniqueViews = analyticsData.summary.uniqueViewers || 0;
+    const uniqueRatio = totalViews > 0 ? uniqueViews / totalViews : 0;
+    return (analyticsData.viewsByDay || []).map((entry) => ({
+      date: entry.date,
+      views: entry.count,
+      verified: Math.round(entry.count * uniqueRatio),
+    }));
+  }, [analyticsData]);
+  const slideAttentionConfig = useMemo(() => {
+    if (!analyticsData) {
+      return {
+        data: [] as { label: string; value: number }[],
+        unit: "s" as "s" | "",
+        tooltipLabel: "Hold time",
+        title: "Hold time per section (last 24h).",
+      };
+    }
+    if (analyticsData.pageTiming && analyticsData.pageTiming.length > 0) {
+      return {
+        data: analyticsData.pageTiming.slice(0, 6).map((entry) => ({
+          label: `Page ${entry.page}`,
+          value: Math.round(entry.avgDuration || 0),
+        })),
+        unit: "s" as const,
+        tooltipLabel: "Hold time",
+        title: "Hold time per section (last 24h).",
+      };
+    }
+    return {
+      data: analyticsData.pageEngagement.slice(0, 6).map((entry) => ({
+        label: `Page ${entry.page}`,
+        value: entry.views,
+      })),
+      unit: "" as const,
+      tooltipLabel: "Views",
+      title: "Top slides by view count.",
+    };
+  }, [analyticsData]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -1482,20 +1523,24 @@ export default function DeckPage() {
 
                   <div className="grid gap-6 lg:grid-cols-2">
                     <div className="rounded-2xl border border-slate-200 bg-slate-100 p-4">
-                      <p className="text-sm font-semibold text-slate-800 mb-3">
-                        Views Over Time
+                      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.4em] text-slate-500">
+                        <LineChart className="h-4 w-4 text-[#771144]" />
+                        Live viewer curve
+                      </div>
+                      <p className="text-sm font-semibold text-slate-800">
+                        Sessions vs. verified recipients (rolling 7 days).
                       </p>
-                      {analyticsData.viewsByDay.length === 0 ? (
-                        <p className="text-sm text-slate-500">
+                      {viewsChartData.length === 0 ? (
+                        <p className="mt-6 text-sm text-slate-500">
                           No timeline data yet.
                         </p>
                       ) : (
                         <div className="h-48">
                           <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={analyticsData.viewsByDay}>
+                            <AreaChart data={viewsChartData}>
                               <defs>
                                 <linearGradient
-                                  id="viewsGradient"
+                                  id="deckVerifiedGradient"
                                   x1="0"
                                   y1="0"
                                   x2="0"
@@ -1503,26 +1548,48 @@ export default function DeckPage() {
                                 >
                                   <stop
                                     offset="5%"
-                                    stopColor={ANALYTICS_ACCENT_LIGHT}
-                                    stopOpacity={0.8}
+                                    stopColor="#c084fc"
+                                    stopOpacity={0.4}
                                   />
                                   <stop
                                     offset="95%"
-                                    stopColor={ANALYTICS_ACCENT_LIGHT}
+                                    stopColor="#c084fc"
+                                    stopOpacity={0}
+                                  />
+                                </linearGradient>
+                                <linearGradient
+                                  id="deckViewsGradient"
+                                  x1="0"
+                                  y1="0"
+                                  x2="0"
+                                  y2="1"
+                                >
+                                  <stop
+                                    offset="5%"
+                                    stopColor={ANALYTICS_ACCENT}
+                                    stopOpacity={0.35}
+                                  />
+                                  <stop
+                                    offset="95%"
+                                    stopColor={ANALYTICS_ACCENT}
                                     stopOpacity={0}
                                   />
                                 </linearGradient>
                               </defs>
                               <CartesianGrid
                                 strokeDasharray="3 3"
-                                stroke={`rgba(${ANALYTICS_ACCENT_RGB},0.15)`}
+                                stroke="#e2e8f0"
                               />
                               <XAxis
                                 dataKey="date"
                                 stroke="#94a3b8"
                                 fontSize={12}
                               />
-                              <YAxis stroke="#94a3b8" fontSize={12} />
+                              <YAxis
+                                stroke="#94a3b8"
+                                fontSize={12}
+                                allowDecimals={false}
+                              />
                               <Tooltip
                                 contentStyle={{
                                   backgroundColor: "rgba(15,23,42,0.9)",
@@ -1530,13 +1597,30 @@ export default function DeckPage() {
                                   borderRadius: "0.75rem",
                                   color: "white",
                                 }}
+                                formatter={(value, name) => {
+                                  if (typeof value === "number") {
+                                    const label =
+                                      name === "verified"
+                                        ? "Verified"
+                                        : "Total views";
+                                    return [value.toString(), label];
+                                  }
+                                  return [value, "Sessions"];
+                                }}
                               />
                               <Area
                                 type="monotone"
-                                dataKey="count"
+                                dataKey="verified"
+                                stroke="#c084fc"
+                                strokeWidth={2}
+                                fill="url(#deckVerifiedGradient)"
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="views"
                                 stroke={ANALYTICS_ACCENT}
-                                fillOpacity={0.8}
-                                fill="url(#viewsGradient)"
+                                strokeWidth={3}
+                                fill="url(#deckViewsGradient)"
                               />
                             </AreaChart>
                           </ResponsiveContainer>
@@ -1545,35 +1629,39 @@ export default function DeckPage() {
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-slate-100 p-4">
-                      <p className="text-sm font-semibold text-slate-800 mb-3">
-                        Hot Pages
+                      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-[0.4em] text-slate-500">
+                        <BarChart3 className="h-4 w-4 text-[#771144]" />
+                        Slide attention
+                      </div>
+                      <p className="text-sm font-semibold text-slate-800">
+                        {slideAttentionConfig.title}
                       </p>
-                      {analyticsData.pageEngagement.length === 0 ? (
-                        <p className="text-sm text-slate-500">
+                      {slideAttentionConfig.data.length === 0 ? (
+                        <p className="mt-6 text-sm text-slate-500">
                           Waiting for viewers to flip through.
                         </p>
                       ) : (
                         <div className="h-48">
                           <ResponsiveContainer width="100%" height="100%">
-                            <BarChart
-                              data={analyticsData.pageEngagement.slice(0, 6)}
-                              layout="vertical"
-                            >
+                            <BarChart data={slideAttentionConfig.data}>
                               <CartesianGrid
                                 strokeDasharray="3 3"
-                                stroke={`rgba(${ANALYTICS_ACCENT_RGB},0.15)`}
+                                stroke="#e2e8f0"
                               />
                               <XAxis
-                                type="number"
+                                dataKey="label"
                                 stroke="#94a3b8"
                                 fontSize={12}
                               />
                               <YAxis
-                                type="category"
-                                dataKey={(entry) => `Page ${entry.page}`}
-                                width={70}
                                 stroke="#94a3b8"
                                 fontSize={12}
+                                tickFormatter={(value) =>
+                                  typeof value === "number" &&
+                                  slideAttentionConfig.unit === "s"
+                                    ? `${value}s`
+                                    : value
+                                }
                               />
                               <Tooltip
                                 cursor={{
@@ -1585,18 +1673,27 @@ export default function DeckPage() {
                                   borderRadius: "0.75rem",
                                   color: "white",
                                 }}
+                                formatter={(value) => {
+                                  const formatted =
+                                    typeof value === "number" &&
+                                    slideAttentionConfig.unit === "s"
+                                      ? `${value}s`
+                                      : value;
+                                  return [
+                                    formatted,
+                                    slideAttentionConfig.tooltipLabel,
+                                  ];
+                                }}
                               />
-                              <Bar dataKey="views" radius={[0, 10, 10, 0]}>
-                                {analyticsData.pageEngagement
-                                  .slice(0, 6)
-                                  .map((entry, index) => (
+                              <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                                {slideAttentionConfig.data.map(
+                                  (entry, index) => (
                                     <Cell
-                                      key={`cell-${index}`}
-                                      fill={`rgba(${ANALYTICS_ACCENT_RGB},${
-                                        0.6 - index * 0.08
-                                      })`}
+                                      key={entry.label}
+                                      fill={`rgba(${ANALYTICS_ACCENT_RGB},${0.9 - index * 0.1})`}
                                     />
-                                  ))}
+                                  ),
+                                )}
                               </Bar>
                             </BarChart>
                           </ResponsiveContainer>

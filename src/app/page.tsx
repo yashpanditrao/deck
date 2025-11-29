@@ -8,14 +8,31 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { GoogleIcon } from "@/components/google-icon";
 import {
+  Activity,
   BarChart3,
   Copy,
   Eye,
+  LineChart,
+  Link2,
+  Loader2,
   ShieldCheck,
   Sparkles,
   UploadCloud,
-  Loader2,
+  Users,
+  Clock4,
 } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 const heroHighlights = [
   {
@@ -68,6 +85,70 @@ const analyticsMetrics = [
   { label: "Unique investors", value: "91" },
   { label: "Avg. session time", value: "5m 44s" },
   { label: "Completion rate", value: "76%" },
+];
+
+const viewerTrendData = [
+  { day: "Mon", views: 34, verified: 18 },
+  { day: "Tue", views: 48, verified: 25 },
+  { day: "Wed", views: 56, verified: 32 },
+  { day: "Thu", views: 61, verified: 38 },
+  { day: "Fri", views: 74, verified: 41 },
+  { day: "Sat", views: 69, verified: 37 },
+  { day: "Sun", views: 82, verified: 44 },
+];
+
+const slideAttentionData = [
+  { page: "Intro", seconds: 52 },
+  { page: "Team", seconds: 64 },
+  { page: "Product", seconds: 77 },
+  { page: "Go-To-Market", seconds: 59 },
+  { page: "Financials", seconds: 71 },
+  { page: "Ask", seconds: 48 },
+];
+
+const liveShareLinks = [
+  {
+    id: "helena",
+    deck: "Raise Series A",
+    status: "Tracking",
+    viewers: 18,
+    completion: 72,
+  },
+  {
+    id: "summit",
+    deck: "Platform Vision",
+    status: "Expiring in 48h",
+    viewers: 11,
+    completion: 63,
+  },
+  {
+    id: "northwood",
+    deck: "Infra Update",
+    status: "Download locked",
+    viewers: 7,
+    completion: 81,
+  },
+];
+
+const investorSignals = [
+  {
+    firm: "Northwood Capital",
+    action: "Replayed slides 11-14",
+    minutesAgo: 6,
+    heat: 82,
+  },
+  {
+    firm: "Signal Peak",
+    action: "Forwarded link with download off",
+    minutesAgo: 19,
+    heat: 64,
+  },
+  {
+    firm: "Asteria Ventures",
+    action: "Completed deck twice this week",
+    minutesAgo: 43,
+    heat: 91,
+  },
 ];
 
 export default function Home() {
@@ -152,7 +233,13 @@ export default function Home() {
                 variant="outline"
                 className="cursor-pointer border-white/50 bg-white/10 text-white hover:bg-white/20"
               >
-                <Link href="mailto:hello@raisegate.com">Book a demo</Link>
+                <Link
+                  href="https://cal.com/yash-3f/15min"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Book a demo
+                </Link>
               </Button>
               <button
                 className="cursor-pointer text-sm font-medium hover:text-white"
@@ -192,8 +279,12 @@ export default function Home() {
                   variant="outline"
                   className="cursor-pointer border-white/60 text-white hover:bg-white/10"
                 >
-                  <Link href="https://raisegate.com" target="_blank">
-                    Learn more
+                  <Link
+                    href="https://cal.com/yash-3f/15min"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Book a walkthrough
                   </Link>
                 </Button>
               </div>
@@ -282,6 +373,278 @@ export default function Home() {
               </CardContent>
             </Card>
           ))}
+        </section>
+
+        <section id="dashboard" className="grid gap-8 lg:grid-cols-2">
+          <Card className="border-slate-200 bg-white">
+            <CardContent className="p-6 space-y-6">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                  <p className="flex items-center gap-2 text-xs uppercase tracking-[0.4em] text-slate-500">
+                    <LineChart className="h-4 w-4 text-[#771144]" />
+                    Live dashboard
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-slate-900">
+                    Exactly what teams monitor inside RaiseGate.
+                  </p>
+                </div>
+                <Button
+                  className="cursor-pointer bg-[#771144] text-white hover:bg-[#5d0d36]"
+                  onClick={() => setShowLogin(true)}
+                >
+                  Open dashboard
+                </Button>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-4">
+                {[
+                  { label: "Views today", value: "82", icon: Eye },
+                  { label: "Verified viewers", value: "31", icon: Users },
+                  { label: "Avg. duration", value: "5m 41s", icon: Clock4 },
+                  { label: "Locked decks", value: "12", icon: ShieldCheck },
+                ].map((metric) => (
+                  <div
+                    key={metric.label}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="flex items-center justify-between text-xs uppercase tracking-[0.3em] text-slate-500">
+                      <span>{metric.label}</span>
+                      <metric.icon className="h-4 w-4 text-slate-500" />
+                    </div>
+                    <p className="mt-3 text-xl font-semibold text-slate-900">
+                      {metric.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={viewerTrendData}>
+                    <defs>
+                      <linearGradient
+                        id="liveViewsGradient"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor="#771144"
+                          stopOpacity={0.35}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="#771144"
+                          stopOpacity={0}
+                        />
+                      </linearGradient>
+                      <linearGradient
+                        id="liveVerifiedGradient"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor="#c084fc"
+                          stopOpacity={0.4}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor="#c084fc"
+                          stopOpacity={0}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="day" stroke="#94a3b8" fontSize={12} />
+                    <YAxis stroke="#94a3b8" fontSize={12} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "rgba(15,23,42,0.9)",
+                        border: "1px solid rgba(148,163,184,0.2)",
+                        borderRadius: "0.75rem",
+                        color: "white",
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="verified"
+                      stroke="#c084fc"
+                      strokeWidth={2}
+                      fill="url(#liveVerifiedGradient)"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="views"
+                      stroke="#771144"
+                      strokeWidth={3}
+                      fill="url(#liveViewsGradient)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 bg-white">
+            <CardContent className="p-6 space-y-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.4em] text-slate-500">
+                    Slide attention
+                  </p>
+                  <p className="mt-2 text-xl font-semibold text-slate-900">
+                    Hold time per section (last 24h).
+                  </p>
+                </div>
+                <span className="rounded-full bg-[#771144]/10 px-3 py-1 text-xs font-semibold text-[#771144]">
+                  Real data
+                </span>
+              </div>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={slideAttentionData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="page" stroke="#94a3b8" fontSize={12} />
+                    <YAxis
+                      dataKey="seconds"
+                      stroke="#94a3b8"
+                      fontSize={12}
+                      tickFormatter={(value) => `${value}s`}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "rgba(119,17,68,0.05)" }}
+                      contentStyle={{
+                        backgroundColor: "rgba(15,23,42,0.9)",
+                        border: "1px solid rgba(148,163,184,0.2)",
+                        borderRadius: "0.75rem",
+                        color: "white",
+                      }}
+                      formatter={(value: number) => [`${value}s`, "Hold time"]}
+                    />
+                    <Bar dataKey="seconds" radius={[6, 6, 0, 0]}>
+                      {slideAttentionData.map((item, index) => (
+                        <Cell
+                          key={item.page}
+                          fill={`rgba(119,17,68,${0.9 - index * 0.1})`}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 bg-white">
+            <CardContent className="p-6 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.4em] text-slate-500">
+                    Active share links
+                  </p>
+                  <p className="mt-2 text-xl font-semibold text-slate-900">
+                    Mirrors what your workspace tracks.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  className="cursor-pointer border-slate-300 text-slate-900 hover:bg-slate-100"
+                  onClick={() => setShowLogin(true)}
+                >
+                  Sync decks
+                </Button>
+              </div>
+              <div className="space-y-4">
+                {liveShareLinks.map((link) => (
+                  <div
+                    key={link.id}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {link.deck}
+                        </p>
+                        <p className="mt-1 flex items-center gap-1 text-xs font-mono text-slate-500">
+                          <Link2 className="h-3.5 w-3.5 text-[#771144]" />/
+                          {link.id} • {link.status}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-semibold text-slate-900">
+                          {link.viewers}
+                        </p>
+                        <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
+                          Verified viewers
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex items-center gap-3">
+                      <div className="h-2 flex-1 rounded-full bg-white">
+                        <div
+                          className="h-full rounded-full bg-[#771144]"
+                          style={{ width: `${link.completion}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-semibold text-slate-600">
+                        {link.completion}% completion
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 bg-white">
+            <CardContent className="p-6 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.4em] text-slate-500">
+                    Investor signals
+                  </p>
+                  <p className="mt-2 text-xl font-semibold text-slate-900">
+                    Heat map of who&apos;s leaning in this week.
+                  </p>
+                </div>
+                <Button
+                  className="cursor-pointer bg-[#771144] text-white hover:bg-[#5d0d36]"
+                  onClick={() => setShowLogin(true)}
+                >
+                  Open activity
+                </Button>
+              </div>
+              <div className="space-y-3 text-sm text-slate-600">
+                {investorSignals.map((signal) => (
+                  <div
+                    key={signal.firm}
+                    className="flex items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4"
+                  >
+                    <div>
+                      <p className="font-semibold text-slate-900">
+                        {signal.firm}
+                      </p>
+                      <p>{signal.action}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs text-slate-500">
+                        {signal.minutesAgo}m ago
+                      </span>
+                      <div className="mt-2 h-2 w-20 rounded-full bg-white">
+                        <div
+                          className="h-full rounded-full bg-[#771144]"
+                          style={{ width: `${Math.min(signal.heat, 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </section>
 
         <section
@@ -411,6 +774,53 @@ export default function Home() {
               </div>
             </CardContent>
           </Card>
+        </section>
+
+        <section className="rounded-3xl border border-[#771144]/30 bg-[#1b0d16] px-8 py-10 text-white shadow-lg shadow-[#771144]/20">
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <div className="space-y-4">
+              <p className="text-xs uppercase tracking-[0.4em] text-white/70">
+                Live walkthroughs
+              </p>
+              <p className="text-3xl font-semibold">
+                Book 15 minutes with Yash and see your data inside RaiseGate.
+              </p>
+              <p className="text-sm text-white/80">
+                Every session uses the real deck workspace you&apos;ll access
+                afterward—no slides, just product. Reserve a slot at{" "}
+                <Link
+                  href="https://cal.com/yash-3f/15min"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-dashed underline-offset-4"
+                >
+                  cal.com/yash-3f/15min
+                </Link>
+                .
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                asChild
+                className="cursor-pointer bg-white text-[#771144] hover:bg-slate-100"
+              >
+                <Link
+                  href="https://cal.com/yash-3f/15min"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Book a 15-min demo
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                className="cursor-pointer border-white/30 text-white hover:bg-white/10"
+                onClick={() => setShowLogin(true)}
+              >
+                Launch product sandbox
+              </Button>
+            </div>
+          </div>
         </section>
       </main>
 
