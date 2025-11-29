@@ -43,6 +43,8 @@ import {
   BarChart,
   Bar,
   Cell,
+  PieChart,
+  Pie,
 } from "recharts";
 import { GoogleIcon } from "@/components/google-icon";
 
@@ -109,6 +111,17 @@ const ACCESS_LEVEL_LABELS: Record<DeckShareLink["access_level"], string> = {
 const EXPIRATION_OPTIONS = ["7", "30", "90", "180", "365"];
 const ANALYTICS_ACCENT = "#771144";
 const ANALYTICS_ACCENT_RGB = "119,17,68";
+const LOCATION_PIE_COLORS = [
+  "#771144",
+  "#c084fc",
+  "#fcd34d",
+  "#f472b6",
+  "#22d3ee",
+];
+const COMPLETION_COLORS = {
+  complete: "#10b981",
+  dropoff: "#f43f5e",
+};
 
 export default function DeckPage() {
   const router = useRouter();
@@ -198,6 +211,32 @@ export default function DeckPage() {
       tooltipLabel: "Views",
       title: "Top slides by view count.",
     };
+  }, [analyticsData]);
+  const locationPieData = useMemo(() => {
+    if (!analyticsData || !analyticsData.locationStats) return [];
+    return analyticsData.locationStats.slice(0, 5).map((entry) => ({
+      label: entry.location || "Unknown",
+      value: entry.count || 0,
+      percentage: Number(entry.percentage ?? 0),
+    }));
+  }, [analyticsData]);
+  const completionPieData = useMemo(() => {
+    if (!analyticsData) return [];
+    const completionRate = analyticsData.summary?.completionRate ?? 0;
+    const completion = Math.max(0, Math.min(100, completionRate));
+    const dropoff = Math.max(0, 100 - completion);
+    return [
+      {
+        label: "Completed",
+        value: Number(completion.toFixed(1)),
+        color: COMPLETION_COLORS.complete,
+      },
+      {
+        label: "Dropped",
+        value: Number(dropoff.toFixed(1)),
+        color: COMPLETION_COLORS.dropoff,
+      },
+    ];
   }, [analyticsData]);
 
   useEffect(() => {
@@ -1697,6 +1736,165 @@ export default function DeckPage() {
                               </Bar>
                             </BarChart>
                           </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-slate-800 mb-2">
+                        Investor geography
+                      </p>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
+                        Top 5 locations by verified views
+                      </p>
+                      {locationPieData.length === 0 ? (
+                        <p className="mt-6 text-sm text-slate-500">
+                          No location data yet.
+                        </p>
+                      ) : (
+                        <div className="mt-4 h-64">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: "rgba(15,23,42,0.9)",
+                                  border: "1px solid rgba(148,163,184,0.2)",
+                                  borderRadius: "0.75rem",
+                                  color: "white",
+                                }}
+                                formatter={(value: number, name, payload) => {
+                                  const percentage =
+                                    payload?.payload?.percentage ?? 0;
+                                  return [
+                                    `${value} viewers`,
+                                    `${name} • ${percentage}%`,
+                                  ];
+                                }}
+                              />
+                              <Pie
+                                data={locationPieData}
+                                dataKey="value"
+                                nameKey="label"
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={50}
+                                outerRadius={90}
+                                paddingAngle={2}
+                              >
+                                {locationPieData.map((entry, index) => (
+                                  <Cell
+                                    key={entry.label}
+                                    fill={
+                                      LOCATION_PIE_COLORS[
+                                        index % LOCATION_PIE_COLORS.length
+                                      ]
+                                    }
+                                  />
+                                ))}
+                              </Pie>
+                            </PieChart>
+                          </ResponsiveContainer>
+                          <div className="mt-4 grid gap-2 text-xs text-slate-600">
+                            {locationPieData.map((entry, index) => (
+                              <div
+                                key={entry.label}
+                                className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-1.5"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="h-2 w-2 rounded-full"
+                                    style={{
+                                      backgroundColor:
+                                        LOCATION_PIE_COLORS[
+                                          index % LOCATION_PIE_COLORS.length
+                                        ],
+                                    }}
+                                  />
+                                  <span>{entry.label}</span>
+                                </div>
+                                <span className="font-semibold text-slate-900">
+                                  {entry.percentage}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-slate-800 mb-2">
+                        Completion mix
+                      </p>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-500">
+                        Sessions finishing the deck vs. exiting early
+                      </p>
+                      {completionPieData.length === 0 ? (
+                        <p className="mt-6 text-sm text-slate-500">
+                          No completion data yet.
+                        </p>
+                      ) : (
+                        <div className="mt-4 grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Tooltip
+                                  contentStyle={{
+                                    backgroundColor: "rgba(15,23,42,0.9)",
+                                    border: "1px solid rgba(148,163,184,0.2)",
+                                    borderRadius: "0.75rem",
+                                    color: "white",
+                                  }}
+                                  formatter={(value: number, name) => [
+                                    `${value}%`,
+                                    name as string,
+                                  ]}
+                                />
+                                <Pie
+                                  data={completionPieData}
+                                  dataKey="value"
+                                  nameKey="label"
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={60}
+                                  outerRadius={90}
+                                  label={({ value }) => `${value}%`}
+                                  labelLine={false}
+                                >
+                                  {completionPieData.map((entry) => (
+                                    <Cell
+                                      key={entry.label}
+                                      fill={entry.color}
+                                    />
+                                  ))}
+                                </Pie>
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="space-y-3 text-sm text-slate-600">
+                            {completionPieData.map((entry) => (
+                              <div
+                                key={entry.label}
+                                className="rounded-2xl border border-slate-100 bg-slate-50 p-4"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <p className="font-semibold text-slate-900">
+                                    {entry.label}
+                                  </p>
+                                  <span className="text-lg font-semibold text-slate-900">
+                                    {entry.value}%
+                                  </span>
+                                </div>
+                                <p>
+                                  {entry.label === "Completed"
+                                    ? "Finished the full deck."
+                                    : "Exited before the final slide."}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>

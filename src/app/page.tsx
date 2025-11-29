@@ -817,7 +817,7 @@ export default function Home() {
                 className="cursor-pointer border-white/30 text-white hover:bg-white/10"
                 onClick={() => setShowLogin(true)}
               >
-                Launch product sandbox
+                Launch dashboard
               </Button>
             </div>
           </div>
