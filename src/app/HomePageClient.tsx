@@ -1,7 +1,9 @@
 "use client";
 
+import type { Session } from "@supabase/supabase-js";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -152,9 +154,11 @@ const investorSignals = [
 ];
 
 export default function HomePageClient() {
+  const router = useRouter();
   const [showLogin, setShowLogin] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const handlePopupLogin = async () => {
     if (loginLoading) return;
@@ -190,6 +194,39 @@ export default function HomePageClient() {
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
   }, [showLogin]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const supabase = createClient();
+
+    const updateSessionState = (session: Session | null) => {
+      if (!isMounted) return;
+      setIsAuthenticated(Boolean(session));
+    };
+
+    supabase.auth.getSession().then(({ data }) => {
+      updateSessionState(data.session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      updateSessionState(session);
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleAuthAction = () => {
+    if (isAuthenticated) {
+      router.push("/deck");
+      return;
+    }
+    setShowLogin(true);
+  };
 
   return (
     <div className="min-h-screen bg-[#f9f5fb] text-slate-900">
@@ -241,12 +278,21 @@ export default function HomePageClient() {
                   Book a demo
                 </Link>
               </Button>
-              <button
-                className="cursor-pointer text-sm font-medium hover:text-white"
-                onClick={() => setShowLogin(true)}
-              >
-                Login
-              </button>
+              {isAuthenticated ? (
+                <Button
+                  asChild
+                  className="cursor-pointer bg-white text-[#771144] hover:bg-slate-100"
+                >
+                  <Link href="/deck">Dashboard</Link>
+                </Button>
+              ) : (
+                <button
+                  className="cursor-pointer text-sm font-medium hover:text-white"
+                  onClick={handleAuthAction}
+                >
+                  Login
+                </button>
+              )}
             </div>
           </nav>
         </div>
@@ -270,7 +316,7 @@ export default function HomePageClient() {
               <div className="flex flex-wrap gap-4">
                 <Button
                   className="cursor-pointer bg-white text-[#771144] hover:bg-slate-100"
-                  onClick={() => setShowLogin(true)}
+                  onClick={handleAuthAction}
                 >
                   Start for free
                 </Button>
@@ -351,7 +397,7 @@ export default function HomePageClient() {
                   </div>
                   <Button
                     className="cursor-pointer w-full bg-white text-[#771144] hover:bg-slate-100"
-                    onClick={() => setShowLogin(true)}
+                    onClick={handleAuthAction}
                   >
                     Open Deck Sharing
                   </Button>
@@ -390,7 +436,7 @@ export default function HomePageClient() {
                 </div>
                 <Button
                   className="cursor-pointer bg-[#771144] text-white hover:bg-[#5d0d36]"
-                  onClick={() => setShowLogin(true)}
+                  onClick={handleAuthAction}
                 >
                   Open dashboard
                 </Button>
@@ -552,7 +598,7 @@ export default function HomePageClient() {
                 <Button
                   variant="outline"
                   className="cursor-pointer border-slate-300 text-slate-900 hover:bg-slate-100"
-                  onClick={() => setShowLogin(true)}
+                  onClick={handleAuthAction}
                 >
                   Sync decks
                 </Button>
@@ -612,7 +658,7 @@ export default function HomePageClient() {
                 </div>
                 <Button
                   className="cursor-pointer bg-[#771144] text-white hover:bg-[#5d0d36]"
-                  onClick={() => setShowLogin(true)}
+                  onClick={handleAuthAction}
                 >
                   Open activity
                 </Button>
@@ -760,7 +806,7 @@ export default function HomePageClient() {
               <div className="flex flex-wrap gap-3">
                 <Button
                   className="cursor-pointer bg-[#771144] text-white hover:bg-[#5d0d36]"
-                  onClick={() => setShowLogin(true)}
+                  onClick={handleAuthAction}
                 >
                   Launch RaiseGate
                 </Button>
@@ -815,7 +861,7 @@ export default function HomePageClient() {
               <Button
                 variant="outline"
                 className="cursor-pointer border-white/30 text-white hover:bg-white/10"
-                onClick={() => setShowLogin(true)}
+                onClick={handleAuthAction}
               >
                 Launch dashboard
               </Button>
