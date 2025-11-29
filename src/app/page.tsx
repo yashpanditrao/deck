@@ -81,10 +81,12 @@ export default function Home() {
       setLoginError("");
       setLoginLoading(true);
       const supabase = createClient();
+      const redirectUrl = new URL("/auth/callback", window.location.origin);
+      redirectUrl.searchParams.set("next", "/deck");
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: redirectUrl.toString(),
         },
       });
       if (error) {
