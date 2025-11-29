@@ -73,7 +73,7 @@ const PDFViewer = React.memo<PDFViewerProps>(
     const [loadedPages, setLoadedPages] = useState<Set<number>>(new Set());
     const [renderedPages, setRenderedPages] = useState<Set<number>>(new Set());
     const storageKey = useMemo(() => `analytics_session_${token}`, [token]);
-    
+
     // Calculate which 3 pages to render (prev, current, next)
     const pagesToRender = useMemo(() => {
       if (viewerState.numPages === 0) return [];
@@ -183,14 +183,14 @@ const PDFViewer = React.memo<PDFViewerProps>(
       },
       [],
     );
-    
+
     // Preload adjacent pages when current page changes
     useEffect(() => {
       if (viewerState.numPages === 0) return;
-      
+
       const current = viewerState.pageNumber;
       const pagesToPreload: number[] = [];
-      
+
       // Preload next page
       if (current < viewerState.numPages && !loadedPages.has(current + 1)) {
         pagesToPreload.push(current + 1);
@@ -199,7 +199,7 @@ const PDFViewer = React.memo<PDFViewerProps>(
       if (current > 1 && !loadedPages.has(current - 1)) {
         pagesToPreload.push(current - 1);
       }
-      
+
       if (pagesToPreload.length > 0) {
         setLoadedPages((prev) => new Set([...prev, ...pagesToPreload]));
       }
@@ -458,12 +458,9 @@ const PDFViewer = React.memo<PDFViewerProps>(
           }).catch((err) => console.error("Failed to track view end:", err));
         }
 
-        // Cleanup: Remove session from localStorage
+        // Cleanup: Remove session from localStorage. Keep access tokens cached so
+        // users don't need to re-enter OTP on subsequent visits (JWT handles expiry).
         localStorage.removeItem(storageKey);
-        
-        // Cleanup: Remove access token if it exists (optional, tokens expire via JWT)
-        const accessTokenKey = `access_token_${token}`;
-        localStorage.removeItem(accessTokenKey);
       };
     }, [
       analyticsSession,
@@ -632,7 +629,7 @@ const PDFViewer = React.memo<PDFViewerProps>(
             {/* Render 3 pages simultaneously (prev, current, next) in a stack */}
             {pagesToRender.map((pageNum) => {
               const isCurrentPage = pageNum === viewerState.pageNumber;
-              
+
               return (
                 <div
                   key={pageNum}
@@ -640,7 +637,7 @@ const PDFViewer = React.memo<PDFViewerProps>(
                   style={{
                     opacity: isCurrentPage ? 1 : 0,
                     zIndex: isCurrentPage ? 10 : 0,
-                    pointerEvents: isCurrentPage ? 'auto' : 'none',
+                    pointerEvents: isCurrentPage ? "auto" : "none",
                   }}
                 >
                   <Page

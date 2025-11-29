@@ -122,6 +122,13 @@ const COMPLETION_COLORS = {
   complete: "#10b981",
   dropoff: "#f43f5e",
 };
+const CHART_TOOLTIP_STYLE = {
+  backgroundColor: "rgba(255,255,255,0.95)",
+  border: "1px solid rgba(15,23,42,0.08)",
+  borderRadius: "0.75rem",
+  color: "#0f172a",
+  boxShadow: "0 15px 35px rgba(15,23,42,0.15)",
+};
 
 export default function DeckPage() {
   const router = useRouter();
@@ -1630,12 +1637,7 @@ export default function DeckPage() {
                                 allowDecimals={false}
                               />
                               <Tooltip
-                                contentStyle={{
-                                  backgroundColor: "rgba(15,23,42,0.9)",
-                                  border: "1px solid rgba(148,163,184,0.2)",
-                                  borderRadius: "0.75rem",
-                                  color: "white",
-                                }}
+                                contentStyle={CHART_TOOLTIP_STYLE}
                                 formatter={(value, name) => {
                                   if (typeof value === "number") {
                                     const label =
@@ -1706,12 +1708,7 @@ export default function DeckPage() {
                                 cursor={{
                                   fill: `rgba(${ANALYTICS_ACCENT_RGB},0.08)`,
                                 }}
-                                contentStyle={{
-                                  backgroundColor: "rgba(15,23,42,0.9)",
-                                  border: "1px solid rgba(148,163,184,0.2)",
-                                  borderRadius: "0.75rem",
-                                  color: "white",
-                                }}
+                                contentStyle={CHART_TOOLTIP_STYLE}
                                 formatter={(value) => {
                                   const formatted =
                                     typeof value === "number" &&
@@ -1758,12 +1755,7 @@ export default function DeckPage() {
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Tooltip
-                                contentStyle={{
-                                  backgroundColor: "rgba(15,23,42,0.9)",
-                                  border: "1px solid rgba(148,163,184,0.2)",
-                                  borderRadius: "0.75rem",
-                                  color: "white",
-                                }}
+                                contentStyle={CHART_TOOLTIP_STYLE}
                                 formatter={(value: number, name, payload) => {
                                   const percentage =
                                     payload?.payload?.percentage ?? 0;
@@ -1841,12 +1833,7 @@ export default function DeckPage() {
                             <ResponsiveContainer width="100%" height="100%">
                               <PieChart>
                                 <Tooltip
-                                  contentStyle={{
-                                    backgroundColor: "rgba(15,23,42,0.9)",
-                                    border: "1px solid rgba(148,163,184,0.2)",
-                                    borderRadius: "0.75rem",
-                                    color: "white",
-                                  }}
+                                  contentStyle={CHART_TOOLTIP_STYLE}
                                   formatter={(value: number, name) => [
                                     `${value}%`,
                                     name as string,
