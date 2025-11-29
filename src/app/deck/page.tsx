@@ -106,6 +106,9 @@ const ACCESS_LEVEL_LABELS: Record<DeckShareLink["access_level"], string> = {
 };
 
 const EXPIRATION_OPTIONS = ["7", "30", "90", "180", "365"];
+const ANALYTICS_ACCENT = "#771144";
+const ANALYTICS_ACCENT_RGB = "119,17,68";
+const ANALYTICS_ACCENT_LIGHT = "#f7d3e6";
 
 export default function DeckPage() {
   const router = useRouter();
@@ -1500,19 +1503,19 @@ export default function DeckPage() {
                                 >
                                   <stop
                                     offset="5%"
-                                    stopColor="#ffffff"
-                                    stopOpacity={0.3}
+                                    stopColor={ANALYTICS_ACCENT_LIGHT}
+                                    stopOpacity={0.8}
                                   />
                                   <stop
                                     offset="95%"
-                                    stopColor="#ffffff"
+                                    stopColor={ANALYTICS_ACCENT_LIGHT}
                                     stopOpacity={0}
                                   />
                                 </linearGradient>
                               </defs>
                               <CartesianGrid
                                 strokeDasharray="3 3"
-                                stroke="rgba(255,255,255,0.08)"
+                                stroke={`rgba(${ANALYTICS_ACCENT_RGB},0.15)`}
                               />
                               <XAxis
                                 dataKey="date"
@@ -1531,8 +1534,8 @@ export default function DeckPage() {
                               <Area
                                 type="monotone"
                                 dataKey="count"
-                                stroke="#ffffff"
-                                fillOpacity={1}
+                                stroke={ANALYTICS_ACCENT}
+                                fillOpacity={0.8}
                                 fill="url(#viewsGradient)"
                               />
                             </AreaChart>
@@ -1558,7 +1561,7 @@ export default function DeckPage() {
                             >
                               <CartesianGrid
                                 strokeDasharray="3 3"
-                                stroke="rgba(255,255,255,0.08)"
+                                stroke={`rgba(${ANALYTICS_ACCENT_RGB},0.15)`}
                               />
                               <XAxis
                                 type="number"
@@ -1573,7 +1576,9 @@ export default function DeckPage() {
                                 fontSize={12}
                               />
                               <Tooltip
-                                cursor={{ fill: "rgba(255,255,255,0.05)" }}
+                                cursor={{
+                                  fill: `rgba(${ANALYTICS_ACCENT_RGB},0.08)`,
+                                }}
                                 contentStyle={{
                                   backgroundColor: "rgba(15,23,42,0.9)",
                                   border: "1px solid rgba(148,163,184,0.2)",
@@ -1587,7 +1592,9 @@ export default function DeckPage() {
                                   .map((entry, index) => (
                                     <Cell
                                       key={`cell-${index}`}
-                                      fill={`rgba(255,255,255,${0.7 - index * 0.1})`}
+                                      fill={`rgba(${ANALYTICS_ACCENT_RGB},${
+                                        0.6 - index * 0.08
+                                      })`}
                                     />
                                   ))}
                               </Bar>
