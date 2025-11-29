@@ -1751,44 +1751,46 @@ export default function DeckPage() {
                           No location data yet.
                         </p>
                       ) : (
-                        <div className="mt-4 h-64">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Tooltip
-                                contentStyle={CHART_TOOLTIP_STYLE}
-                                formatter={(value: number, name, payload) => {
-                                  const percentage =
-                                    payload?.payload?.percentage ?? 0;
-                                  return [
-                                    `${value} viewers`,
-                                    `${name} • ${percentage}%`,
-                                  ];
-                                }}
-                              />
-                              <Pie
-                                data={locationPieData}
-                                dataKey="value"
-                                nameKey="label"
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={50}
-                                outerRadius={90}
-                                paddingAngle={2}
-                              >
-                                {locationPieData.map((entry, index) => (
-                                  <Cell
-                                    key={entry.label}
-                                    fill={
-                                      LOCATION_PIE_COLORS[
-                                        index % LOCATION_PIE_COLORS.length
-                                      ]
-                                    }
-                                  />
-                                ))}
-                              </Pie>
-                            </PieChart>
-                          </ResponsiveContainer>
-                          <div className="mt-4 grid gap-2 text-xs text-slate-600">
+                        <div className="mt-4 space-y-4">
+                          <div className="h-64">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Tooltip
+                                  contentStyle={CHART_TOOLTIP_STYLE}
+                                  formatter={(value: number, name, payload) => {
+                                    const percentage =
+                                      payload?.payload?.percentage ?? 0;
+                                    return [
+                                      `${value} viewers`,
+                                      `${name} • ${percentage}%`,
+                                    ];
+                                  }}
+                                />
+                                <Pie
+                                  data={locationPieData}
+                                  dataKey="value"
+                                  nameKey="label"
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={50}
+                                  outerRadius={90}
+                                  paddingAngle={2}
+                                >
+                                  {locationPieData.map((entry, index) => (
+                                    <Cell
+                                      key={entry.label}
+                                      fill={
+                                        LOCATION_PIE_COLORS[
+                                          index % LOCATION_PIE_COLORS.length
+                                        ]
+                                      }
+                                    />
+                                  ))}
+                                </Pie>
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div className="grid gap-2 text-xs text-slate-600">
                             {locationPieData.map((entry, index) => (
                               <div
                                 key={entry.label}
