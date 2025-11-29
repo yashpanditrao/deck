@@ -43,6 +43,7 @@ import {
   Bar,
   Cell,
 } from "recharts";
+import { GoogleIcon } from "@/components/google-icon";
 
 interface DeckFile {
   id: string;
@@ -127,6 +128,9 @@ export default function DeckPage() {
   const [shareLoading, setShareLoading] = useState(false);
   const [revokingToken, setRevokingToken] = useState<string | null>(null);
   const [appOrigin, setAppOrigin] = useState("");
+  const [showLogin, setShowLogin] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
   const [recentShareLink, setRecentShareLink] = useState<{
     token: string;
     url: string;
@@ -134,9 +138,13 @@ export default function DeckPage() {
   } | null>(null);
   const [copyHintVisible, setCopyHintVisible] = useState(false);
   const copyHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [editingIdentifier, setEditingIdentifier] = useState<string | null>(null);
+  const [editingIdentifier, setEditingIdentifier] = useState<string | null>(
+    null,
+  );
   const [identifierValue, setIdentifierValue] = useState("");
-  const [updatingIdentifier, setUpdatingIdentifier] = useState<string | null>(null);
+  const [updatingIdentifier, setUpdatingIdentifier] = useState<string | null>(
+    null,
+  );
   const [linkForm, setLinkForm] = useState({
     accessLevel: "restricted",
     expirationDays: "30",
@@ -146,6 +154,7 @@ export default function DeckPage() {
     isDownloadable: false,
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const shareLinkBase = appOrigin || "your-domain.com";
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -168,7 +177,7 @@ export default function DeckPage() {
         appOrigin ||
         (typeof window !== "undefined" ? window.location.origin : "");
       if (!origin) return "";
-      
+
       // Use format: /[identifier]/view?token=[token] when identifier is available
       // Fallback to /view?token=[token] when identifier is not available
       if (identifier) {
@@ -198,6 +207,28 @@ export default function DeckPage() {
     }, 8000);
   }, []);
 
+  const handlePopupLogin = async () => {
+    if (loginLoading) return;
+    try {
+      setLoginError("");
+      setLoginLoading(true);
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (error) {
+        setLoginError(error.message);
+        setLoginLoading(false);
+      }
+    } catch {
+      setLoginError("Unable to start Google login right now.");
+      setLoginLoading(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
 
@@ -212,14 +243,18 @@ export default function DeckPage() {
         if (!mounted) return;
 
         if (error || !currentUser) {
-          router.push("/auth/login");
+          setShowLogin(true);
+          setUser(null);
           return;
         }
 
         setUser(currentUser);
+        setShowLogin(false);
+        setLoginError("");
       } catch (error) {
         console.error("Auth error:", error);
-        router.push("/auth/login");
+        setShowLogin(true);
+        setUser(null);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -229,7 +264,7 @@ export default function DeckPage() {
     return () => {
       mounted = false;
     };
-  }, [router]);
+  }, []);
 
   const getDeckName = useCallback((filePath: string) => {
     if (!filePath) return "Untitled Deck";
@@ -500,7 +535,12 @@ export default function DeckPage() {
   const handleLogout = async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/auth/login");
+    setUser(null);
+    setDecks([]);
+    setShareLinks([]);
+    setSelectedDeckId("");
+    setShowLogin(true);
+    router.push("/");
   };
 
   const handleGenerateLink = async () => {
@@ -592,7 +632,10 @@ export default function DeckPage() {
     }
   };
 
-  const handleCopyLink = async (token: string, identifier: string | null = null) => {
+  const handleCopyLink = async (
+    token: string,
+    identifier: string | null = null,
+  ) => {
     await copyShareLink(buildShareUrl(token, identifier));
   };
 
@@ -726,380 +769,153 @@ export default function DeckPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-white" />
+      <div className="min-h-screen bg-[#f9f5fb] flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-[#771144]" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="relative isolate bg-slate-950 border-b border-slate-900/50">
-        <div className="container mx-auto px-4 py-12">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm uppercase tracking-[0.25em] text-slate-400">
-                RaiseGate Deck Studio
-              </p>
-              <h1 className="mt-4 text-3xl font-semibold sm:text-4xl">
-                Share-ready decks, crafted for wow moments
-              </h1>
-              <p className="mt-3 text-slate-300 max-w-2xl">
-                Upload polished decks, generate tamper-proof sharing links, and
-                control your narrative with download and verification controls.
-              </p>
-            </div>
-            <div className="flex items-center gap-4 text-sm text-slate-300">
-              <span>{user?.email}</span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-slate-700 text-slate-200 hover:bg-slate-800"
-                onClick={handleLogout}
-              >
-                <LogOut className="w-4 h-4 mr-2" />
-                Logout
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {stats.map((stat) => (
-              <div
-                key={stat.label}
-                className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-black/20"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-slate-400">{stat.label}</p>
-                  <stat.icon className="w-5 h-5 text-slate-500" />
-                </div>
-                <p className="mt-4 text-xl font-semibold">{stat.value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="container mx-auto px-4 py-10 space-y-10">
-        <div className="grid gap-8 lg:grid-cols-2">
-          <Card className="bg-slate-900/80 border-slate-800">
-            <CardHeader className="space-y-1">
-              <CardTitle className="text-xl flex items-center gap-2">
-                <UploadCloud className="w-5 h-5 text-slate-200" />
-                Upload Deck
-              </CardTitle>
-              <CardDescription>
-                Drop a PDF to deploy it directly into RaiseGate (max 20MB)
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div
-                className="border-2 border-dashed border-slate-700 rounded-2xl p-8 text-center transition hover:border-slate-400 hover:bg-slate-900/50 cursor-pointer"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <div className="flex flex-col items-center gap-4">
-                  <div className="p-4 rounded-full bg-slate-800/60">
-                    {uploading ? (
-                      <Loader2 className="w-6 h-6 animate-spin text-white" />
-                    ) : (
-                      <UploadCloud className="w-6 h-6 text-slate-200" />
-                    )}
-                  </div>
-                  <div>
-                    <p className="font-medium">
-                      {uploading
-                        ? "Uploading your deck..."
-                        : "Click or drop a PDF"}
-                    </p>
-                    <p className="text-sm text-slate-400">
-                      {uploading
-                        ? "Hang tight while we secure your file"
-                        : "AES encrypted upload • unlimited revisions"}
-                    </p>
-                  </div>
-                  <Input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf"
-                    className="hidden"
-                    onChange={handleFileInputChange}
-                    disabled={uploading}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-slate-900/80 border-slate-800">
-            <CardHeader className="space-y-1">
-              <CardTitle className="flex items-center gap-2 text-xl">
-                <Shield className="w-5 h-5 text-slate-200" />
-                Generate Secure Link
-              </CardTitle>
-              <CardDescription>
-                Choose your deck, tailor access, and issue a branded share link
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="text-sm text-slate-300 flex flex-col gap-2">
-                <label htmlFor="deckSelect">Deck to share</label>
-                <select
-                  id="deckSelect"
-                  value={selectedDeckId}
-                  onChange={(e) => setSelectedDeckId(e.target.value)}
-                  className="bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400 text-slate-100"
-                >
-                  <option value="">Select deck</option>
-                  {decks.map((deck) => (
-                    <option key={deck.id} value={deck.id}>
-                      {getDeckName(deck.file_path)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {selectedDeck ? (
-                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-4 space-y-3">
-                  {renaming === selectedDeck.id ? (
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <Input
-                        value={renameValue}
-                        onChange={(e) => setRenameValue(e.target.value)}
-                        className="bg-slate-900 border-slate-700 text-slate-100"
-                        placeholder="Enter new name"
-                        autoFocus
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          className="bg-white text-slate-900 hover:bg-slate-200"
-                          onClick={() => handleRename(selectedDeck.id)}
-                        >
-                          Save
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-slate-700 text-slate-200"
-                          onClick={() => {
-                            setRenaming(null);
-                            setRenameValue("");
-                          }}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="font-semibold">
-                          {getDeckName(selectedDeck.file_path)}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          Uploaded {formatDate(selectedDeck.uploaded_at)}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-slate-200 hover:bg-slate-900/60"
-                          onClick={() => {
-                            setRenameValue(getDeckName(selectedDeck.file_path));
-                            setRenaming(selectedDeck.id);
-                          }}
-                        >
-                          <PenSquare className="w-4 h-4 mr-1" />
-                          Rename
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-rose-400 hover:bg-rose-500/10"
-                          onClick={() => handleDelete(selectedDeck.id)}
-                          disabled={deleting === selectedDeck.id}
-                        >
-                          {deleting === selectedDeck.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-4 h-4 mr-1" />
-                          )}
-                          Delete
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-400">
-                  Upload a deck to unlock sharing controls.
+    <>
+      <div
+        className={`min-h-screen bg-[#f9f5fb] text-slate-900 ${
+          showLogin && !user ? "pointer-events-none blur-sm" : ""
+        }`}
+      >
+        <div className="relative isolate bg-[#f9f5fb] border-b border-slate-200">
+          <div className="container mx-auto px-4 py-12">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500">
+                  RaiseGate Deck Share
                 </p>
-              )}
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="text-sm text-slate-300 flex flex-col gap-2">
-                  <label htmlFor="accessLevel">Access level</label>
-                  <select
-                    id="accessLevel"
-                    value={linkForm.accessLevel}
-                    onChange={(e) =>
-                      setLinkForm((prev) => ({
-                        ...prev,
-                        accessLevel: e.target.value,
-                      }))
-                    }
-                    className="bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400 text-slate-100"
-                  >
-                    <option value="restricted">Restricted (magic link)</option>
-                    <option value="public">Public</option>
-                    <option value="whitelisted">Whitelisted email</option>
-                  </select>
-                </div>
-                <div className="text-sm text-slate-300 flex flex-col gap-2">
-                  <label htmlFor="expiration">Expires in</label>
-                  <select
-                    id="expiration"
-                    value={linkForm.expirationDays}
-                    onChange={(e) =>
-                      setLinkForm((prev) => ({
-                        ...prev,
-                        expirationDays: e.target.value,
-                      }))
-                    }
-                    className="bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400 text-slate-100"
-                  >
-                    {EXPIRATION_OPTIONS.map((day) => (
-                      <option key={day} value={day}>
-                        {day} days
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <h1 className="mt-4 text-3xl font-semibold sm:text-4xl">
+                  Share your deck with investors and track exactly how they
+                  engage with it.
+                </h1>
+                <p className="mt-3 text-slate-600 max-w-2xl">
+                  Upload polished decks, generate tamper-proof sharing links,
+                  and control your narrative with download and verification
+                  controls.
+                </p>
               </div>
-
-              {linkForm.accessLevel === "whitelisted" && (
-                <div className="space-y-3">
-                  <Input
-                    placeholder="Recipient email"
-                    value={linkForm.recipientEmail}
-                    onChange={(e) =>
-                      setLinkForm((prev) => ({
-                        ...prev,
-                        recipientEmail: e.target.value,
-                      }))
-                    }
-                    className="bg-slate-900 border-slate-700 text-slate-100"
-                  />
-                  <Input
-                    placeholder="Allowed emails (comma separated)"
-                    value={linkForm.allowedEmails}
-                    onChange={(e) =>
-                      setLinkForm((prev) => ({
-                        ...prev,
-                        allowedEmails: e.target.value,
-                      }))
-                    }
-                    className="bg-slate-900 border-slate-700 text-slate-100"
-                  />
-                  <Input
-                    placeholder="Allowed domains (comma separated)"
-                    value={linkForm.allowedDomains}
-                    onChange={(e) =>
-                      setLinkForm((prev) => ({
-                        ...prev,
-                        allowedDomains: e.target.value,
-                      }))
-                    }
-                    className="bg-slate-900 border-slate-700 text-slate-100"
-                  />
-                </div>
-              )}
-
-              <label className="flex items-center gap-3 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={linkForm.isDownloadable}
-                  onChange={(e) =>
-                    setLinkForm((prev) => ({
-                      ...prev,
-                      isDownloadable: e.target.checked,
-                    }))
-                  }
-                  className="form-checkbox h-4 w-4 rounded border-slate-600 bg-slate-900 text-white focus:ring-slate-500"
-                />
-                Allow download access
-              </label>
-
-              <div className="flex flex-col gap-3 sm:flex-row">
-                <Button
-                  className="w-full gap-2 bg-white text-slate-900 hover:bg-slate-200"
-                  onClick={handleGenerateLink}
-                  disabled={creatingLink}
-                >
-                  {creatingLink ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Generating
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="w-4 h-4" />
-                      Generate secure link
-                    </>
-                  )}
-                </Button>
-                {recentShareLink && copyHintVisible && (
+              <div className="flex items-center gap-4 text-sm text-slate-600">
+                {user ? (
+                  <>
+                    <span>{user.email}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-slate-300 text-slate-800 hover:bg-slate-200"
+                      onClick={handleLogout}
+                    >
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Logout
+                    </Button>
+                  </>
+                ) : (
                   <Button
-                    type="button"
                     variant="outline"
-                    className="w-full gap-2 border-slate-700 text-slate-200 hover:bg-slate-800/70 sm:w-auto"
-                    onClick={handleCopyLatestLink}
+                    size="sm"
+                    className="border-slate-300 text-slate-800 hover:bg-slate-200"
+                    onClick={() => setShowLogin(true)}
                   >
-                    <Copy className="w-4 h-4" />
-                    Copy latest link
+                    Sign in
                   </Button>
                 )}
               </div>
-              {recentShareLink && copyHintVisible && (
-                <p className="text-xs text-slate-400">
-                  Latest link ready for{" "}
-                  {deckNameMap.get(recentShareLink.deckId) || "your deck"}.
-                </p>
-              )}
-            </CardContent>
-          </Card>
+            </div>
+
+            <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {stats.map((stat) => (
+                <div
+                  key={stat.label}
+                  className="rounded-2xl border border-slate-200 bg-white p-5"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-slate-500">{stat.label}</p>
+                    <stat.icon className="w-5 h-5 text-slate-500" />
+                  </div>
+                  <p className="mt-4 text-xl font-semibold">{stat.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-2">
-          <Card className="bg-slate-900/70 border-slate-800 lg:col-span-2">
-            <CardHeader>
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Link2 className="w-5 h-5 text-slate-200" />
-                    Active Share Links
-                  </CardTitle>
-                  <CardDescription>
-                    Rotate, revoke, or copy trackable links
-                  </CardDescription>
+        <div className="container mx-auto px-4 py-10 space-y-10">
+          <div className="grid gap-8 lg:grid-cols-2">
+            <Card className="bg-white border-slate-200">
+              <CardHeader className="space-y-1">
+                <CardTitle className="text-xl flex items-center gap-2">
+                  <UploadCloud className="w-5 h-5 text-slate-800" />
+                  Upload Deck
+                </CardTitle>
+                <CardDescription>
+                  Drop a PDF to deploy it directly into RaiseGate (max 20MB)
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div
+                  className="border-2 border-dashed border-slate-300 rounded-2xl p-8 text-center transition hover:border-slate-400 hover:bg-slate-100 cursor-pointer"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="p-4 rounded-full bg-slate-200">
+                      {uploading ? (
+                        <Loader2 className="w-6 h-6 animate-spin text-slate-900" />
+                      ) : (
+                        <UploadCloud className="w-6 h-6 text-slate-800" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium">
+                        {uploading
+                          ? "Uploading your deck..."
+                          : "Click or drop a PDF"}
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        {uploading
+                          ? "Hang tight while we secure your file"
+                          : "AES encrypted upload • unlimited revisions"}
+                      </p>
+                    </div>
+                    <Input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf"
+                      className="hidden"
+                      onChange={handleFileInputChange}
+                      disabled={uploading}
+                    />
+                  </div>
                 </div>
-                <div className="text-sm text-slate-300 flex flex-col gap-1">
-                  <label
-                    htmlFor="shareDeckFilter"
-                    className="text-xs uppercase tracking-wide text-slate-400"
-                  >
-                    Filter by deck
-                  </label>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white border-slate-200">
+              <CardHeader className="space-y-1">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Shield className="w-5 h-5 text-slate-800" />
+                  Generate Secure Link
+                </CardTitle>
+                <CardDescription>
+                  Choose your deck, tailor access, and issue a branded share
+                  link
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="text-sm text-slate-600 flex flex-col gap-2">
+                  <label htmlFor="deckSelect">Deck to share</label>
                   <select
-                    id="shareDeckFilter"
-                    value={shareDeckFilter}
-                    onChange={(e) => handleShareFilterChange(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-slate-100"
+                    id="deckSelect"
+                    value={selectedDeckId}
+                    onChange={(e) => setSelectedDeckId(e.target.value)}
+                    className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400 text-slate-900"
                   >
-                    <option value="">All decks</option>
+                    <option value="">Select deck</option>
                     {decks.map((deck) => (
                       <option key={deck.id} value={deck.id}>
                         {getDeckName(deck.file_path)}
@@ -1107,408 +923,857 @@ export default function DeckPage() {
                     ))}
                   </select>
                 </div>
-              </div>
+
+                {selectedDeck ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-4 space-y-3">
+                    {renaming === selectedDeck.id ? (
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <Input
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          className="bg-white border-slate-300 text-slate-900"
+                          placeholder="Enter new name"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            className="bg-[#771144] text-white hover:bg-[#5d0d36]"
+                            onClick={() => handleRename(selectedDeck.id)}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-slate-300 text-slate-800"
+                            onClick={() => {
+                              setRenaming(null);
+                              setRenameValue("");
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-semibold">
+                            {getDeckName(selectedDeck.file_path)}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            Uploaded {formatDate(selectedDeck.uploaded_at)}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-slate-800 hover:bg-white"
+                            onClick={() => {
+                              setRenameValue(
+                                getDeckName(selectedDeck.file_path),
+                              );
+                              setRenaming(selectedDeck.id);
+                            }}
+                          >
+                            <PenSquare className="w-4 h-4 mr-1" />
+                            Rename
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-rose-400 hover:bg-rose-500/10"
+                            onClick={() => handleDelete(selectedDeck.id)}
+                            disabled={deleting === selectedDeck.id}
+                          >
+                            {deleting === selectedDeck.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4 mr-1" />
+                            )}
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    Upload a deck to unlock sharing controls.
+                  </p>
+                )}
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="text-sm text-slate-600 flex flex-col gap-2">
+                    <label htmlFor="accessLevel">Access level</label>
+                    <select
+                      id="accessLevel"
+                      value={linkForm.accessLevel}
+                      onChange={(e) =>
+                        setLinkForm((prev) => ({
+                          ...prev,
+                          accessLevel: e.target.value,
+                        }))
+                      }
+                      className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400 text-slate-900"
+                    >
+                      <option value="restricted">
+                        Restricted (magic link)
+                      </option>
+                      <option value="public">Public</option>
+                      <option value="whitelisted">Whitelisted email</option>
+                    </select>
+                  </div>
+                  <div className="text-sm text-slate-600 flex flex-col gap-2">
+                    <label htmlFor="expiration">Expires in</label>
+                    <select
+                      id="expiration"
+                      value={linkForm.expirationDays}
+                      onChange={(e) =>
+                        setLinkForm((prev) => ({
+                          ...prev,
+                          expirationDays: e.target.value,
+                        }))
+                      }
+                      className="bg-slate-50 border border-slate-300 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-slate-400 text-slate-900"
+                    >
+                      {EXPIRATION_OPTIONS.map((day) => (
+                        <option key={day} value={day}>
+                          {day} days
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {linkForm.accessLevel === "whitelisted" && (
+                  <div className="space-y-3">
+                    <Input
+                      placeholder="Recipient email"
+                      value={linkForm.recipientEmail}
+                      onChange={(e) =>
+                        setLinkForm((prev) => ({
+                          ...prev,
+                          recipientEmail: e.target.value,
+                        }))
+                      }
+                      className="bg-white border-slate-300 text-slate-900"
+                    />
+                    <Input
+                      placeholder="Allowed emails (comma separated)"
+                      value={linkForm.allowedEmails}
+                      onChange={(e) =>
+                        setLinkForm((prev) => ({
+                          ...prev,
+                          allowedEmails: e.target.value,
+                        }))
+                      }
+                      className="bg-white border-slate-300 text-slate-900"
+                    />
+                    <Input
+                      placeholder="Allowed domains (comma separated)"
+                      value={linkForm.allowedDomains}
+                      onChange={(e) =>
+                        setLinkForm((prev) => ({
+                          ...prev,
+                          allowedDomains: e.target.value,
+                        }))
+                      }
+                      className="bg-white border-slate-300 text-slate-900"
+                    />
+                  </div>
+                )}
+
+                <label className="flex items-center gap-3 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={linkForm.isDownloadable}
+                    onChange={(e) =>
+                      setLinkForm((prev) => ({
+                        ...prev,
+                        isDownloadable: e.target.checked,
+                      }))
+                    }
+                    className="form-checkbox h-4 w-4 rounded border-slate-300 bg-white text-slate-900 focus:ring-slate-500"
+                  />
+                  Allow download access
+                </label>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button
+                    className="w-full gap-2 bg-[#771144] text-white hover:bg-[#5d0d36]"
+                    onClick={handleGenerateLink}
+                    disabled={creatingLink}
+                  >
+                    {creatingLink ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Generating
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-4 h-4" />
+                        Generate secure link
+                      </>
+                    )}
+                  </Button>
+                  {recentShareLink && copyHintVisible && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full gap-2 border-slate-300 text-slate-800 hover:bg-slate-200/70 sm:w-auto"
+                      onClick={handleCopyLatestLink}
+                    >
+                      <Copy className="w-4 h-4" />
+                      Copy latest link
+                    </Button>
+                  )}
+                </div>
+                {recentShareLink && copyHintVisible && (
+                  <p className="text-xs text-slate-500">
+                    Latest link ready for{" "}
+                    {deckNameMap.get(recentShareLink.deckId) || "your deck"}.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-8 lg:grid-cols-2">
+            <Card className="bg-white border-slate-200 lg:col-span-2">
+              <CardHeader>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Link2 className="w-5 h-5 text-slate-800" />
+                      Active Share Links
+                    </CardTitle>
+                    <CardDescription>
+                      Rotate, revoke, or copy trackable links
+                    </CardDescription>
+                  </div>
+                  <div className="text-sm text-slate-600 flex flex-col gap-1">
+                    <label
+                      htmlFor="shareDeckFilter"
+                      className="text-xs uppercase tracking-wide text-slate-500"
+                    >
+                      Filter by deck
+                    </label>
+                    <select
+                      id="shareDeckFilter"
+                      value={shareDeckFilter}
+                      onChange={(e) => handleShareFilterChange(e.target.value)}
+                      className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-500 text-slate-900"
+                    >
+                      <option value="">All decks</option>
+                      {decks.map((deck) => (
+                        <option key={deck.id} value={deck.id}>
+                          {getDeckName(deck.file_path)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {shareLoading ? (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="w-6 h-6 animate-spin text-slate-900" />
+                  </div>
+                ) : shareLinks.length === 0 ? (
+                  <div className="border border-dashed border-slate-300 rounded-2xl p-8 text-center text-slate-500">
+                    {shareDeckFilter
+                      ? "No share links for this deck yet."
+                      : "No share links yet. Generate one to get started."}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {shareLinks.map((link) => {
+                      const isEditing = editingIdentifier === link.token;
+                      const trimmedIdentifier = identifierValue.trim();
+                      const previewIdentifier = isEditing
+                        ? trimmedIdentifier || link.link_identifier || ""
+                        : link.link_identifier || "";
+                      const previewUrl = buildShareUrl(
+                        link.token,
+                        previewIdentifier ? previewIdentifier : null,
+                      );
+                      const customUrl = buildShareUrl(
+                        link.token,
+                        link.link_identifier,
+                      );
+
+                      return (
+                        <div
+                          key={link.id}
+                          className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3"
+                        >
+                          <div className="flex flex-wrap items-start gap-3 justify-between">
+                            <div>
+                              <p className="text-sm uppercase tracking-widest text-slate-500">
+                                {deckNameMap.get(link.deck_id) || "Deck"}
+                              </p>
+                              <p className="text-base font-semibold">
+                                {ACCESS_LEVEL_LABELS[link.access_level]}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Created {formatDate(link.created_at)} •{" "}
+                                {link.expires_at
+                                  ? `Expires ${formatDate(link.expires_at)}`
+                                  : "No expiry"}
+                              </p>
+                            </div>
+                            <span className="inline-flex items-center gap-2 rounded-full bg-[#771144]/10 px-3 py-1 text-xs text-[#771144]">
+                              <ShieldCheck className="w-3 h-3" />
+                              {link.is_downloadable
+                                ? "Downloadable"
+                                : "View only"}
+                            </span>
+                          </div>
+                          {isEditing ? (
+                            <div className="space-y-4">
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-4 space-y-3">
+                                <div>
+                                  <p className="text-sm font-semibold">
+                                    Custom share link
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    This is the part of the link your recipients
+                                    will see. Keep it short and recognizable.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 font-mono text-sm text-slate-600">
+                                  <span className="text-slate-500">
+                                    {shareLinkBase}/
+                                  </span>
+                                  <Input
+                                    value={identifierValue}
+                                    onChange={(e) =>
+                                      setIdentifierValue(e.target.value)
+                                    }
+                                    className="flex-1 min-w-[160px] bg-white border-slate-300 text-slate-900 font-mono"
+                                    placeholder="custom-link"
+                                    autoFocus
+                                  />
+                                  <span className="text-slate-500">/view</span>
+                                </div>
+                                <p className="text-[11px] text-slate-500">
+                                  We’ll automatically append the secure token so
+                                  the link stays protected.
+                                </p>
+                              </div>
+                              <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
+                                <p className="text-[11px] uppercase tracking-widest text-slate-500">
+                                  Preview
+                                </p>
+                                {previewIdentifier ? (
+                                  <p className="mt-1 font-mono text-sm text-slate-900 break-all">
+                                    {previewUrl}
+                                  </p>
+                                ) : (
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    Add a custom name above to see the full link
+                                    format.
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="sm"
+                                  className="bg-white text-[#771144] hover:bg-slate-100"
+                                  onClick={() =>
+                                    handleUpdateIdentifier(link.token)
+                                  }
+                                  disabled={updatingIdentifier === link.token}
+                                >
+                                  {updatingIdentifier === link.token ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    "Save"
+                                  )}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-slate-300 text-slate-800"
+                                  onClick={() => {
+                                    setEditingIdentifier(null);
+                                    setIdentifierValue("");
+                                  }}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {link.link_identifier ? (
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50/30 p-3 space-y-1">
+                                  <p className="text-xs uppercase tracking-widest text-slate-500">
+                                    Custom link
+                                  </p>
+                                  <p className="font-mono text-sm text-slate-900 break-all">
+                                    {customUrl}
+                                  </p>
+                                  <p className="text-[11px] text-slate-500">
+                                    This friendly path routes to the same secure
+                                    link and is easier to share.
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/20 p-3">
+                                  <p className="text-xs text-slate-500">
+                                    Add a custom link handle to replace the
+                                    default tokenized URL.
+                                  </p>
+                                </div>
+                              )}
+                              <div className="flex flex-wrap items-center gap-3">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-slate-300 text-slate-800 hover:bg-slate-200"
+                                  onClick={() =>
+                                    handleViewAnalytics(link.token)
+                                  }
+                                >
+                                  {analyticsToken === link.token &&
+                                  analyticsLoading ? (
+                                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                  ) : (
+                                    <BarChart3 className="w-4 h-4 mr-2" />
+                                  )}
+                                  Analytics
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-slate-300 text-slate-800 hover:bg-slate-200"
+                                  onClick={() => {
+                                    setIdentifierValue(
+                                      link.link_identifier || "",
+                                    );
+                                    setEditingIdentifier(link.token);
+                                  }}
+                                >
+                                  <Link2 className="w-4 h-4 mr-2" />
+                                  Edit Link
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-slate-300 text-slate-800 hover:bg-slate-200"
+                                  onClick={() =>
+                                    handleCopyLink(
+                                      link.token,
+                                      link.link_identifier,
+                                    )
+                                  }
+                                >
+                                  <Copy className="w-4 h-4 mr-2" />
+                                  Copy Link
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-rose-400 hover:bg-rose-500/10"
+                                  onClick={() => handleRevokeLink(link.token)}
+                                  disabled={revokingToken === link.token}
+                                >
+                                  {revokingToken === link.token ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-4 h-4" />
+                                  )}
+                                  <span className="ml-2">Revoke</span>
+                                </Button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="bg-white border-slate-200">
+            <CardHeader className="space-y-2">
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-slate-800" />
+                Deck Analytics
+              </CardTitle>
+              <CardDescription>
+                Select any share link to visualize verified viewer engagement.
+              </CardDescription>
+              {analyticsToken && (
+                <p className="text-xs text-slate-500">
+                  Viewing analytics for token{" "}
+                  <span className="font-mono">
+                    {analyticsToken.slice(0, 10)}…
+                  </span>
+                </p>
+              )}
             </CardHeader>
             <CardContent>
-              {shareLoading ? (
+              {analyticsError && (
+                <div className="mb-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                  {analyticsError}
+                </div>
+              )}
+              {analyticsLoading ? (
                 <div className="flex items-center justify-center py-10">
-                  <Loader2 className="w-6 h-6 animate-spin text-white" />
+                  <Loader2 className="w-6 h-6 animate-spin text-slate-900" />
                 </div>
-              ) : shareLinks.length === 0 ? (
-                <div className="border border-dashed border-slate-700 rounded-2xl p-8 text-center text-slate-400">
-                  {shareDeckFilter
-                    ? "No share links for this deck yet."
-                    : "No share links yet. Generate one to get started."}
+              ) : !analyticsToken ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
+                  Tap “Analytics” on any share link to populate this panel.
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {shareLinks.map((link) => (
-                    <div
-                      key={link.id}
-                      className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 space-y-3"
-                    >
-                      <div className="flex flex-wrap items-start gap-3 justify-between">
-                        <div>
-                          <p className="text-sm uppercase tracking-widest text-slate-500">
-                            {deckNameMap.get(link.deck_id) || "Deck"}
-                          </p>
-                          <p className="text-base font-semibold">
-                            {ACCESS_LEVEL_LABELS[link.access_level]}
-                          </p>
-                          <p className="text-xs text-slate-400">
-                            Created {formatDate(link.created_at)} •{" "}
-                            {link.expires_at
-                              ? `Expires ${formatDate(link.expires_at)}`
-                              : "No expiry"}
-                          </p>
+              ) : analyticsData ? (
+                <div className="space-y-8">
+                  <div className="grid gap-4 md:grid-cols-4">
+                    {[
+                      {
+                        label: "Total Views",
+                        value: analyticsData.summary.totalViews,
+                        icon: Eye,
+                      },
+                      {
+                        label: "Unique Viewers",
+                        value: analyticsData.summary.uniqueViewers,
+                        icon: Users,
+                      },
+                      {
+                        label: "Avg. Duration",
+                        value: formatDurationSeconds(
+                          analyticsData.summary.avgDuration,
+                        ),
+                        icon: Clock4,
+                      },
+                      {
+                        label: "Completion Rate",
+                        value: `${analyticsData.summary.completionRate}%`,
+                        icon: ShieldCheck,
+                      },
+                    ].map((metric) => (
+                      <div
+                        key={metric.label}
+                        className="rounded-2xl border border-slate-200 bg-white p-4"
+                      >
+                        <div className="flex items-center justify-between text-xs uppercase tracking-widest text-slate-500">
+                          <span>{metric.label}</span>
+                          <metric.icon className="w-4 h-4 text-slate-500" />
                         </div>
-                        <span className="inline-flex items-center gap-2 rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-200">
-                          <ShieldCheck className="w-3 h-3" />
-                          {link.is_downloadable ? "Downloadable" : "View only"}
-                        </span>
+                        <p className="mt-3 text-xl font-semibold">
+                          {metric.value}
+                        </p>
                       </div>
-                      {editingIdentifier === link.token ? (
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                          <Input
-                            value={identifierValue}
-                            onChange={(e) => setIdentifierValue(e.target.value)}
-                            className="bg-slate-900 border-slate-700 text-slate-100"
-                            placeholder="Link identifier (e.g., username)"
-                            autoFocus
-                          />
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              className="bg-white text-slate-900 hover:bg-slate-200"
-                              onClick={() => handleUpdateIdentifier(link.token)}
-                              disabled={updatingIdentifier === link.token}
-                            >
-                              {updatingIdentifier === link.token ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                "Save"
-                              )}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="border-slate-700 text-slate-200"
-                              onClick={() => {
-                                setEditingIdentifier(null);
-                                setIdentifierValue("");
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
+                    ))}
+                  </div>
+
+                  <div className="grid gap-6 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-100 p-4">
+                      <p className="text-sm font-semibold text-slate-800 mb-3">
+                        Views Over Time
+                      </p>
+                      {analyticsData.viewsByDay.length === 0 ? (
+                        <p className="text-sm text-slate-500">
+                          No timeline data yet.
+                        </p>
                       ) : (
-                        <>
-                          {link.link_identifier && (
-                            <div className="text-xs text-slate-400 mb-2">
-                              Link: <span className="font-mono text-slate-300">{link.link_identifier}</span>
-                            </div>
-                          )}
-                          <div className="flex flex-wrap items-center gap-3">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-slate-700 text-slate-200 hover:bg-slate-800"
-                              onClick={() => handleViewAnalytics(link.token)}
-                            >
-                              {analyticsToken === link.token && analyticsLoading ? (
-                                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                              ) : (
-                                <BarChart3 className="w-4 h-4 mr-2" />
-                              )}
-                              Analytics
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-slate-700 text-slate-200 hover:bg-slate-800"
-                              onClick={() => {
-                                setIdentifierValue(link.link_identifier || "");
-                                setEditingIdentifier(link.token);
-                              }}
-                            >
-                              <PenSquare className="w-4 h-4 mr-2" />
-                              Edit Identifier
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="border-slate-700 text-slate-200 hover:bg-slate-800"
-                              onClick={() => handleCopyLink(link.token, link.link_identifier)}
-                            >
-                              <Copy className="w-4 h-4 mr-2" />
-                              Copy Link
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-rose-400 hover:bg-rose-500/10"
-                              onClick={() => handleRevokeLink(link.token)}
-                              disabled={revokingToken === link.token}
-                            >
-                              {revokingToken === link.token ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="w-4 h-4" />
-                              )}
-                              <span className="ml-2">Revoke</span>
-                            </Button>
-                          </div>
-                        </>
+                        <div className="h-48">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={analyticsData.viewsByDay}>
+                              <defs>
+                                <linearGradient
+                                  id="viewsGradient"
+                                  x1="0"
+                                  y1="0"
+                                  x2="0"
+                                  y2="1"
+                                >
+                                  <stop
+                                    offset="5%"
+                                    stopColor="#ffffff"
+                                    stopOpacity={0.3}
+                                  />
+                                  <stop
+                                    offset="95%"
+                                    stopColor="#ffffff"
+                                    stopOpacity={0}
+                                  />
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid
+                                strokeDasharray="3 3"
+                                stroke="rgba(255,255,255,0.08)"
+                              />
+                              <XAxis
+                                dataKey="date"
+                                stroke="#94a3b8"
+                                fontSize={12}
+                              />
+                              <YAxis stroke="#94a3b8" fontSize={12} />
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: "rgba(15,23,42,0.9)",
+                                  border: "1px solid rgba(148,163,184,0.2)",
+                                  borderRadius: "0.75rem",
+                                  color: "white",
+                                }}
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="count"
+                                stroke="#ffffff"
+                                fillOpacity={1}
+                                fill="url(#viewsGradient)"
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
                       )}
                     </div>
-                  ))}
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-100 p-4">
+                      <p className="text-sm font-semibold text-slate-800 mb-3">
+                        Hot Pages
+                      </p>
+                      {analyticsData.pageEngagement.length === 0 ? (
+                        <p className="text-sm text-slate-500">
+                          Waiting for viewers to flip through.
+                        </p>
+                      ) : (
+                        <div className="h-48">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                              data={analyticsData.pageEngagement.slice(0, 6)}
+                              layout="vertical"
+                            >
+                              <CartesianGrid
+                                strokeDasharray="3 3"
+                                stroke="rgba(255,255,255,0.08)"
+                              />
+                              <XAxis
+                                type="number"
+                                stroke="#94a3b8"
+                                fontSize={12}
+                              />
+                              <YAxis
+                                type="category"
+                                dataKey={(entry) => `Page ${entry.page}`}
+                                width={70}
+                                stroke="#94a3b8"
+                                fontSize={12}
+                              />
+                              <Tooltip
+                                cursor={{ fill: "rgba(255,255,255,0.05)" }}
+                                contentStyle={{
+                                  backgroundColor: "rgba(15,23,42,0.9)",
+                                  border: "1px solid rgba(148,163,184,0.2)",
+                                  borderRadius: "0.75rem",
+                                  color: "white",
+                                }}
+                              />
+                              <Bar dataKey="views" radius={[0, 10, 10, 0]}>
+                                {analyticsData.pageEngagement
+                                  .slice(0, 6)
+                                  .map((entry, index) => (
+                                    <Cell
+                                      key={`cell-${index}`}
+                                      fill={`rgba(255,255,255,${0.7 - index * 0.1})`}
+                                    />
+                                  ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-100 p-4">
+                    <p className="text-sm font-semibold text-slate-800 mb-3">
+                      Recent Sessions
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm text-slate-800">
+                        <thead>
+                          <tr className="text-xs uppercase tracking-wide text-slate-500">
+                            <th className="py-2 text-left">Viewer</th>
+                            <th className="py-2 text-left">Location</th>
+                            <th className="py-2 text-left">Duration</th>
+                            <th className="py-2 text-left">Pages</th>
+                            <th className="py-2 text-left">Completed</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {analyticsData.recentViewers
+                            .slice(0, 6)
+                            .map((viewer) => (
+                              <tr
+                                key={viewer.id}
+                                className="border-t border-slate-200/70"
+                              >
+                                <td className="py-2">{viewer.viewer}</td>
+                                <td className="py-2 text-slate-500">
+                                  {viewer.location}
+                                </td>
+                                <td className="py-2">
+                                  {formatDurationSeconds(viewer.duration || 0)}
+                                </td>
+                                <td className="py-2 text-slate-500">
+                                  {viewer.pagesViewed}
+                                </td>
+                                <td className="py-2">
+                                  {viewer.completed ? (
+                                    <span className="text-emerald-400">
+                                      Yes
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-500">No</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          {analyticsData.recentViewers.length === 0 && (
+                            <tr>
+                              <td
+                                className="py-4 text-center text-slate-500"
+                                colSpan={5}
+                              >
+                                No sessions recorded yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
+                  Analytics unavailable. Try loading a different link.
                 </div>
               )}
             </CardContent>
           </Card>
         </div>
-
-        <Card className="bg-slate-900/70 border-slate-800">
-          <CardHeader className="space-y-2">
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-slate-200" />
-              Deck Analytics
-            </CardTitle>
-            <CardDescription>
-              Select any share link to visualize verified viewer engagement.
-            </CardDescription>
-            {analyticsToken && (
-              <p className="text-xs text-slate-500">
-                Viewing analytics for token{" "}
-                <span className="font-mono">
-                  {analyticsToken.slice(0, 10)}…
-                </span>
-              </p>
-            )}
-          </CardHeader>
-          <CardContent>
-            {analyticsError && (
-              <div className="mb-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-                {analyticsError}
-              </div>
-            )}
-            {analyticsLoading ? (
-              <div className="flex items-center justify-center py-10">
-                <Loader2 className="w-6 h-6 animate-spin text-white" />
-              </div>
-            ) : !analyticsToken ? (
-              <div className="rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-                Tap “Analytics” on any share link to populate this panel.
-              </div>
-            ) : analyticsData ? (
-              <div className="space-y-8">
-                <div className="grid gap-4 md:grid-cols-4">
-                  {[
-                    {
-                      label: "Total Views",
-                      value: analyticsData.summary.totalViews,
-                      icon: Eye,
-                    },
-                    {
-                      label: "Unique Viewers",
-                      value: analyticsData.summary.uniqueViewers,
-                      icon: Users,
-                    },
-                    {
-                      label: "Avg. Duration",
-                      value: formatDurationSeconds(
-                        analyticsData.summary.avgDuration,
-                      ),
-                      icon: Clock4,
-                    },
-                    {
-                      label: "Completion Rate",
-                      value: `${analyticsData.summary.completionRate}%`,
-                      icon: ShieldCheck,
-                    },
-                  ].map((metric) => (
-                    <div
-                      key={metric.label}
-                      className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4"
-                    >
-                      <div className="flex items-center justify-between text-xs uppercase tracking-widest text-slate-500">
-                        <span>{metric.label}</span>
-                        <metric.icon className="w-4 h-4 text-slate-400" />
-                      </div>
-                      <p className="mt-3 text-xl font-semibold">
-                        {metric.value}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-                    <p className="text-sm font-semibold text-slate-200 mb-3">
-                      Views Over Time
-                    </p>
-                    {analyticsData.viewsByDay.length === 0 ? (
-                      <p className="text-sm text-slate-500">
-                        No timeline data yet.
-                      </p>
-                    ) : (
-                      <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={analyticsData.viewsByDay}>
-                            <defs>
-                              <linearGradient
-                                id="viewsGradient"
-                                x1="0"
-                                y1="0"
-                                x2="0"
-                                y2="1"
-                              >
-                                <stop
-                                  offset="5%"
-                                  stopColor="#ffffff"
-                                  stopOpacity={0.3}
-                                />
-                                <stop
-                                  offset="95%"
-                                  stopColor="#ffffff"
-                                  stopOpacity={0}
-                                />
-                              </linearGradient>
-                            </defs>
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              stroke="rgba(255,255,255,0.08)"
-                            />
-                            <XAxis
-                              dataKey="date"
-                              stroke="#94a3b8"
-                              fontSize={12}
-                            />
-                            <YAxis stroke="#94a3b8" fontSize={12} />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor: "rgba(15,23,42,0.9)",
-                                border: "1px solid rgba(148,163,184,0.2)",
-                                borderRadius: "0.75rem",
-                                color: "white",
-                              }}
-                            />
-                            <Area
-                              type="monotone"
-                              dataKey="count"
-                              stroke="#ffffff"
-                              fillOpacity={1}
-                              fill="url(#viewsGradient)"
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-                    <p className="text-sm font-semibold text-slate-200 mb-3">
-                      Hot Pages
-                    </p>
-                    {analyticsData.pageEngagement.length === 0 ? (
-                      <p className="text-sm text-slate-500">
-                        Waiting for viewers to flip through.
-                      </p>
-                    ) : (
-                      <div className="h-48">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={analyticsData.pageEngagement.slice(0, 6)}
-                            layout="vertical"
-                          >
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              stroke="rgba(255,255,255,0.08)"
-                            />
-                            <XAxis
-                              type="number"
-                              stroke="#94a3b8"
-                              fontSize={12}
-                            />
-                            <YAxis
-                              type="category"
-                              dataKey={(entry) => `Page ${entry.page}`}
-                              width={70}
-                              stroke="#94a3b8"
-                              fontSize={12}
-                            />
-                            <Tooltip
-                              cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                              contentStyle={{
-                                backgroundColor: "rgba(15,23,42,0.9)",
-                                border: "1px solid rgba(148,163,184,0.2)",
-                                borderRadius: "0.75rem",
-                                color: "white",
-                              }}
-                            />
-                            <Bar dataKey="views" radius={[0, 10, 10, 0]}>
-                              {analyticsData.pageEngagement
-                                .slice(0, 6)
-                                .map((entry, index) => (
-                                  <Cell
-                                    key={`cell-${index}`}
-                                    fill={`rgba(255,255,255,${0.7 - index * 0.1})`}
-                                  />
-                                ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
-                  <p className="text-sm font-semibold text-slate-200 mb-3">
-                    Recent Sessions
-                  </p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-slate-200">
-                      <thead>
-                        <tr className="text-xs uppercase tracking-wide text-slate-500">
-                          <th className="py-2 text-left">Viewer</th>
-                          <th className="py-2 text-left">Location</th>
-                          <th className="py-2 text-left">Duration</th>
-                          <th className="py-2 text-left">Pages</th>
-                          <th className="py-2 text-left">Completed</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {analyticsData.recentViewers
-                          .slice(0, 6)
-                          .map((viewer) => (
-                            <tr
-                              key={viewer.id}
-                              className="border-t border-slate-800/70"
-                            >
-                              <td className="py-2">{viewer.viewer}</td>
-                              <td className="py-2 text-slate-400">
-                                {viewer.location}
-                              </td>
-                              <td className="py-2">
-                                {formatDurationSeconds(viewer.duration || 0)}
-                              </td>
-                              <td className="py-2 text-slate-400">
-                                {viewer.pagesViewed}
-                              </td>
-                              <td className="py-2">
-                                {viewer.completed ? (
-                                  <span className="text-emerald-400">Yes</span>
-                                ) : (
-                                  <span className="text-slate-500">No</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        {analyticsData.recentViewers.length === 0 && (
-                          <tr>
-                            <td
-                              className="py-4 text-center text-slate-500"
-                              colSpan={5}
-                            >
-                              No sessions recorded yet.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-slate-700 p-8 text-center text-slate-400">
-                Analytics unavailable. Try loading a different link.
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
-    </div>
+      {showLogin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <button
+              className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center bg-white/80 text-2xl font-semibold text-slate-400 shadow-sm transition hover:text-slate-600"
+              onClick={() => {
+                setShowLogin(false);
+                setLoginError("");
+              }}
+              aria-label="Close popup"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+            <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+              <div className="space-y-6 p-6 sm:p-10">
+                <div className="space-y-3">
+                  <p className="text-xs uppercase tracking-[0.4em] text-slate-400">
+                    Deck workspace
+                  </p>
+                  <p className="text-3xl font-semibold text-slate-900">
+                    Sign in with Google to manage RaiseGate decks.
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    One secure login unlocks uploads, investor links, and live
+                    engagement timelines.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600">
+                  <p className="font-semibold text-slate-900">
+                    From this workspace you can:
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    <li>• Upload watermarked PDFs.</li>
+                    <li>• Issue invite-only share links.</li>
+                    <li>• Track every slide view in real time.</li>
+                  </ul>
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePopupLogin}
+                  disabled={loginLoading}
+                  className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-base font-semibold text-slate-900 shadow-lg shadow-slate-950/5 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#771144] disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {loginLoading ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin text-[#771144]" />
+                      Signing in…
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white">
+                        <GoogleIcon />
+                      </span>
+                      Sign in with Google
+                    </>
+                  )}
+                </button>
+                {loginError && (
+                  <p className="text-center text-sm text-rose-500">
+                    {loginError}
+                  </p>
+                )}
+                <p className="text-center text-xs text-slate-500">
+                  RaiseGate never sees your password—Google verifies every
+                  session.
+                </p>
+              </div>
+              <div className="relative hidden flex-col justify-between border-l border-slate-100 bg-slate-50 p-10 text-slate-900 md:flex">
+                <div className="space-y-3">
+                  <p className="text-xs uppercase tracking-[0.4em] text-slate-500">
+                    RaiseGate in practice
+                  </p>
+                  <p className="text-2xl font-semibold leading-snug">
+                    Protect every deck and know who’s reading.
+                  </p>
+                  <p className="text-sm text-slate-600">
+                    Download locks, whitelisted invites, and analytics pulse
+                    through a single login.
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">
+                    <p className="text-xs uppercase tracking-[0.4em] text-slate-500">
+                      Decks launched
+                    </p>
+                    <p className="mt-2 text-3xl font-semibold text-[#771144]">
+                      480+
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center">
+                    <p className="text-xs uppercase tracking-[0.4em] text-slate-500">
+                      Investor replies
+                    </p>
+                    <p className="mt-2 text-3xl font-semibold text-[#771144]">
+                      92
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700">
+                  “RaiseGate keeps our live deck links locked down and pings us
+                  the moment an investor re-opens diligence slides.”
+                  <p className="mt-3 text-xs font-semibold tracking-[0.3em] text-slate-500">
+                    HELENA · ASTERIA VENTURES
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
